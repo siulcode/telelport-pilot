@@ -1,0 +1,19 @@
+# Throwaway probe for the ingress path. Binds :80 on worker01 via hostPort, so a
+# 200 from http://nginx.demo proves DNS, the ingress Elastic IP, the host port,
+# and Cilium's portmap chaining all work -- before Traefik depends on them.
+#
+#   kubectl apply -f apps/probe.yml && curl -sI http://nginx.demo
+#   kubectl delete -f apps/probe.yml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: hostport-test
+spec:
+  nodeSelector:
+    kubernetes.io/hostname: worker01
+  containers:
+    - name: web
+      image: nginx:alpine
+      ports:
+        - containerPort: 80
+          hostPort: 80

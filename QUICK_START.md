@@ -49,6 +49,18 @@ kubectl get nodes
 
 Three nodes `Ready`.
 
+## 5. Optional — probe the ingress path
+
+```bash
+kubectl apply -f apps/probe.yml
+curl -sI http://nginx.demo          # expect HTTP/1.1 200 OK
+kubectl delete -f apps/probe.yml
+```
+
+A bare nginx pod binding `:80` on worker01. A `200` proves DNS, the ingress
+Elastic IP, the host port, and Cilium's portmap chaining all work — worth
+checking before Traefik and cert-manager are layered on top.
+
 ## Teardown
 
 ```bash

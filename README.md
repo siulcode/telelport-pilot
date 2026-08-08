@@ -46,6 +46,8 @@ locally with an uncommitted `config.env.local`.
 │   ├── 20-worker-join.sh     kubeadm join
 │   ├── 30-cni.sh             Cilium + Hubble
 │   └── 90-reset.sh           tear the cluster down, keep the machines
+├── apps/                 manifests applied to the cluster
+│   └── probe.yml             hostPort smoke test for the ingress path
 └── docs/DESIGN.md        design document
 ```
 
