@@ -1,0 +1,83 @@
+# Namespace and two personas. Namespaced Roles only -- no ClusterRole, so
+# neither persona can see anything outside `demo`.
+#
+# Bindings target GROUPS. Kubernetes has no user or group objects: the group is
+# whatever sits in the certificate's O field at issue time, so changing someone's
+# access means reissuing their certificate.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: demo
+---
+# Deploys the app. No secrets access: the deployer creates a Certificate,
+# cert-manager creates the TLS Secret, Traefik consumes it. Nobody reads the key.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-deployer
+  namespace: demo
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+# Read-only plus logs -- enough to answer "is it up, and why not".
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-viewer
+  namespace: demo
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "endpoints", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-deployers
+  namespace: demo
+subjects:
+  - kind: Group
+    name: demo-deployers        # the O field of the client certificate
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: app-deployer
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-viewers
+  namespace: demo
+subjects:
+  - kind: Group
+    name: demo-viewers
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: app-viewer
+  apiGroup: rbac.authorization.k8s.io
