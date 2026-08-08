@@ -1,0 +1,389 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Phase 1 - Infrastructure for a 3-node kubeadm Kubernetes cluster.
+  One control plane (with Elastic IP) and two workers in a single public subnet.
+  This template provisions machines and network only. It installs nothing.
+
+# =============================================================================
+# Parameters
+# =============================================================================
+Parameters:
+
+  ProjectName:
+    Type: String
+    Default: teleport-k8s
+    Description: Prefix for all resource names and the shared Project tag.
+
+  AdminCidr:
+    Type: String
+    Description: >
+      Your public IP in CIDR form (e.g. 203.0.113.4/32). Grants SSH, Kubernetes
+      API, and NodePort access. Never widen this to 0.0.0.0/0.
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+
+  PublicIngressCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    Description: >
+      CIDR allowed to reach ports 80/443. Defaults to a closed value. Set to
+      0.0.0.0/0 only if you need a public ACME HTTP-01 challenge to succeed.
+    AllowedPattern: '^(\d{1,3}\.){3}\d{1,3}/\d{1,2}$'
+
+  AmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id
+    Description: >
+      Resolved from SSM Public Parameters at deploy time, so the template does
+      not rot as Canonical publishes new images.
+
+  ControlPlaneInstanceType:
+    Type: String
+    Default: t3.medium
+    Description: kubeadm preflight needs 2 vCPU and ~1700MB free RAM.
+
+  WorkerInstanceType:
+    Type: String
+    Default: t3.small
+
+  RootVolumeSize:
+    Type: Number
+    Default: 30
+    MinValue: 20
+    Description: GB. Container images fill the 8GB default and trigger DiskPressure.
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+  SubnetCidr:
+    Type: String
+    Default: 10.0.1.0/24
+
+  ControlPlanePrivateIp:
+    Type: String
+    Default: 10.0.1.10
+
+  Worker1PrivateIp:
+    Type: String
+    Default: 10.0.1.21
+
+  Worker2PrivateIp:
+    Type: String
+    Default: 10.0.1.22
+
+  ApiEndpointName:
+    Type: String
+    Default: k8s-api.internal
+    Description: Split-horizon hostname for the API server. Added to certSANs.
+
+# =============================================================================
+# Network
+# =============================================================================
+Resources:
+
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpc'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-igw'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  # Single public subnet. Workers get public IPs so you can SSH directly.
+  # A production build would place workers in a private subnet behind a bastion
+  # or SSM; see the tradeoffs section of the design document.
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: !Ref SubnetCidr
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-subnet'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-rt'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+# =============================================================================
+# Security group
+#
+# One self-referencing rule covers every intra-cluster port: etcd 2379-2380,
+# kubelet 10250, controller-manager 10257, scheduler 10259, NodePort range,
+# and whatever the CNI needs (Cilium VXLAN 8472/udp, Calico BGP 179/tcp).
+# Enumerating those individually is how you lose an hour to a missing port.
+# =============================================================================
+  ClusterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub '${ProjectName} kubeadm cluster'
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - Description: SSH from admin
+          IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AdminCidr
+        - Description: Kubernetes API from admin
+          IpProtocol: tcp
+          FromPort: 6443
+          ToPort: 6443
+          CidrIp: !Ref AdminCidr
+        - Description: NodePort range from admin (nginx demo)
+          IpProtocol: tcp
+          FromPort: 30000
+          ToPort: 32767
+          CidrIp: !Ref AdminCidr
+        - Description: HTTP from admin
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref AdminCidr
+        - Description: HTTPS from admin
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref AdminCidr
+        - Description: HTTP for ACME HTTP-01 (closed by default)
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref PublicIngressCidr
+        - Description: HTTPS public (closed by default)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref PublicIngressCidr
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-sg'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Self-reference must be a separate resource: the group ID does not exist
+  # while the group itself is still being created.
+  ClusterSecurityGroupSelfIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref ClusterSecurityGroup
+      IpProtocol: '-1'
+      SourceSecurityGroupId: !Ref ClusterSecurityGroup
+      Description: All traffic between cluster nodes
+
+# =============================================================================
+# Key pair
+#
+# CloudFormation generates the key and stores the private half in SSM Parameter
+# Store as a SecureString at /ec2/keypair/{KeyPairId}. bootstrap.sh retrieves it.
+# Self-contained: a reviewer needs no pre-existing key.
+# =============================================================================
+  KeyPair:
+    Type: AWS::EC2::KeyPair
+    Properties:
+      KeyName: !Sub '${ProjectName}-key'
+      KeyType: ed25519
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+# =============================================================================
+# Instances
+# =============================================================================
+  ControlPlane:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref ControlPlaneInstanceType
+      KeyName: !Ref KeyPair
+      SubnetId: !Ref PublicSubnet
+      PrivateIpAddress: !Ref ControlPlanePrivateIp
+      SecurityGroupIds:
+        - !Ref ClusterSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          hostnamectl set-hostname cp01
+          cat >> /etc/hosts <<EOF
+          ${ControlPlanePrivateIp} cp01 ${ApiEndpointName}
+          ${Worker1PrivateIp} worker01
+          ${Worker2PrivateIp} worker02
+          EOF
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-cp01'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Role
+          Value: control-plane
+
+  ControlPlaneEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-cp-eip'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # An Elastic IP is what keeps the API server certSANs valid across a
+  # stop/start. Without it the public IP changes and every kubeconfig breaks.
+  ControlPlaneEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt ControlPlaneEip.AllocationId
+      InstanceId: !Ref ControlPlane
+
+  Worker1:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref WorkerInstanceType
+      KeyName: !Ref KeyPair
+      SubnetId: !Ref PublicSubnet
+      PrivateIpAddress: !Ref Worker1PrivateIp
+      SecurityGroupIds:
+        - !Ref ClusterSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          hostnamectl set-hostname worker01
+          cat >> /etc/hosts <<EOF
+          ${ControlPlanePrivateIp} cp01 ${ApiEndpointName}
+          ${Worker1PrivateIp} worker01
+          ${Worker2PrivateIp} worker02
+          EOF
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-worker01'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Role
+          Value: worker
+
+  Worker2:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref WorkerInstanceType
+      KeyName: !Ref KeyPair
+      SubnetId: !Ref PublicSubnet
+      PrivateIpAddress: !Ref Worker2PrivateIp
+      SecurityGroupIds:
+        - !Ref ClusterSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+            VolumeType: gp3
+            DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          hostnamectl set-hostname worker02
+          cat >> /etc/hosts <<EOF
+          ${ControlPlanePrivateIp} cp01 ${ApiEndpointName}
+          ${Worker1PrivateIp} worker01
+          ${Worker2PrivateIp} worker02
+          EOF
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-worker02'
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Role
+          Value: worker
+
+# =============================================================================
+# Outputs - these replace a hand-rolled state file. Phase 2 reads them.
+# =============================================================================
+Outputs:
+
+  KeyPairId:
+    Description: Used to fetch the private key from SSM Parameter Store.
+    Value: !GetAtt KeyPair.KeyPairId
+
+  ControlPlanePrivateIp:
+    Description: kubeadm advertiseAddress.
+    Value: !GetAtt ControlPlane.PrivateIp
+
+  ControlPlanePublicIp:
+    Description: Elastic IP. SSH target and laptop-side certSAN.
+    Value: !Ref ControlPlaneEip
+
+  Worker1PublicIp:
+    Value: !GetAtt Worker1.PublicIp
+
+  Worker2PublicIp:
+    Value: !GetAtt Worker2.PublicIp
+
+  Worker1PrivateIp:
+    Value: !GetAtt Worker1.PrivateIp
+
+  Worker2PrivateIp:
+    Value: !GetAtt Worker2.PrivateIp
+
+  ApiEndpoint:
+    Description: Add this to your laptop /etc/hosts pointing at ControlPlanePublicIp.
+    Value: !Sub '${ApiEndpointName}:6443'
+
+  SecurityGroupId:
+    Value: !Ref ClusterSecurityGroup

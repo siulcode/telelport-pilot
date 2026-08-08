@@ -1,0 +1,12 @@
+# Key material - never commit
+.ssh/
+*.pem
+*.key
+
+# Local cluster credentials
+.kube/
+admin.conf
+
+# Generated user certs from the CSR workflow
+users/*/
+!users/.gitkeep
