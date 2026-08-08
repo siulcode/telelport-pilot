@@ -76,8 +76,7 @@ Parameters:
     Default: k8s-api.internal
     Description: Split-horizon hostname for the API server. Added to certSANs.
 
-  # kubeadm keys nodes on hostname. These are parameters rather than literals so
-  # config.env stays the single source of truth for names as well as addresses.
+  # kubeadm keys nodes on hostname; parameterised so config.env stays canonical.
   ControlPlaneHostname:
     Type: String
     Default: cp01
@@ -95,10 +94,8 @@ Parameters:
 # =============================================================================
 Conditions:
 
-  # PublicIngressCidr defaults to a closed value and is widened only for a
-  # public ACME HTTP-01 challenge. If it is set to the same CIDR as AdminCidr,
-  # the 80/443 rules below would duplicate the admin rules and EC2 rejects the
-  # whole group with InvalidPermission.Duplicate.
+  # If PublicIngressCidr equals AdminCidr the 80/443 rules would duplicate the
+  # admin rules and EC2 rejects the group with InvalidPermission.Duplicate.
   PublicIngressDistinct: !Not [!Equals [!Ref PublicIngressCidr, !Ref AdminCidr]]
 
 # =============================================================================
@@ -133,9 +130,8 @@ Resources:
       VpcId: !Ref Vpc
       InternetGatewayId: !Ref InternetGateway
 
-  # Single public subnet. Workers get public IPs so you can SSH directly.
-  # A production build would place workers in a private subnet behind a bastion
-  # or SSM; see the tradeoffs section of the design document.
+  # Single public subnet; workers get public IPs for direct SSH. Production
+  # would use a private subnet behind a bastion. See docs/DESIGN.md.
   PublicSubnet:
     Type: AWS::EC2::Subnet
     Properties:
@@ -173,14 +169,9 @@ Resources:
       SubnetId: !Ref PublicSubnet
       RouteTableId: !Ref PublicRouteTable
 
-# =============================================================================
-# Security group
-#
-# One self-referencing rule covers every intra-cluster port: etcd 2379-2380,
-# kubelet 10250, controller-manager 10257, scheduler 10259, NodePort range,
-# and whatever the CNI needs (Cilium VXLAN 8472/udp, Calico BGP 179/tcp).
-# Enumerating those individually is how you lose an hour to a missing port.
-# =============================================================================
+# --- Security group ----------------------------------------------------------
+# One self-referencing rule covers every intra-cluster port (etcd, kubelet,
+# scheduler, NodePort, CNI overlay). Enumerating them is how you miss one.
   ClusterSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -218,8 +209,7 @@ Resources:
         - Key: Project
           Value: !Ref ProjectName
 
-  # Separate resources so they can be conditioned off when PublicIngressCidr
-  # equals AdminCidr. A Condition cannot gate an item inside an inline list.
+  # Separate resources: a Condition cannot gate an item inside an inline list.
   PublicHttpIngress:
     Type: AWS::EC2::SecurityGroupIngress
     Condition: PublicIngressDistinct
@@ -252,13 +242,9 @@ Resources:
       SourceSecurityGroupId: !Ref ClusterSecurityGroup
       Description: All traffic between cluster nodes
 
-# =============================================================================
-# Key pair
-#
-# CloudFormation generates the key and stores the private half in SSM Parameter
-# Store as a SecureString at /ec2/keypair/{KeyPairId}. bootstrap.sh retrieves it.
-# Self-contained: a reviewer needs no pre-existing key.
-# =============================================================================
+# --- Key pair ----------------------------------------------------------------
+# Private half lands in SSM at /ec2/keypair/{KeyPairId}; bootstrap.sh fetches it.
+# A reviewer needs no pre-existing key.
   KeyPair:
     Type: AWS::EC2::KeyPair
     Properties:
@@ -268,19 +254,9 @@ Resources:
         - Key: Project
           Value: !Ref ProjectName
 
-# =============================================================================
-# Instance IAM role
-#
-# AmazonSSMManagedInstanceCore and nothing else. That is enough for Session
-# Manager, which is the credential-less access path: with SSM working you can
-# close port 22 entirely and drop the key pair. Worth demonstrating at a company
-# that sells exactly this.
-#
-# Deliberately NOT granting Route53 for a cert-manager DNS-01 solver. kubeadm
-# has no IRSA, so pods inherit the node role -- every workload on the box would
-# get DNS-write. If the real-domain path is taken later, that needs a scoped
-# credential delivered as a Secret, not a node-wide grant.
-# =============================================================================
+# --- Instance IAM role -------------------------------------------------------
+# SSM Session Manager only. No Route53 grant: kubeadm has no IRSA, so pods would
+# inherit it. See docs/DESIGN.md.
   NodeRole:
     Type: AWS::IAM::Role
     Properties:
@@ -325,10 +301,7 @@ Resources:
             VolumeSize: !Ref RootVolumeSize
             VolumeType: gp3
             DeleteOnTermination: true
-            # Account-default aws/ebs KMS key. No key policy to manage, and
-            # etcd lives on this volume -- cluster state at rest is every
-            # Secret in the cluster.
-            Encrypted: true
+            Encrypted: true   # account-default aws/ebs key; etcd lives here
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -357,8 +330,7 @@ Resources:
         - Key: Project
           Value: !Ref ProjectName
 
-  # An Elastic IP is what keeps the API server certSANs valid across a
-  # stop/start. Without it the public IP changes and every kubeconfig breaks.
+  # Keeps certSANs valid across a stop/start.
   ControlPlaneEipAssociation:
     Type: AWS::EC2::EIPAssociation
     Properties:
@@ -382,10 +354,7 @@ Resources:
             VolumeSize: !Ref RootVolumeSize
             VolumeType: gp3
             DeleteOnTermination: true
-            # Account-default aws/ebs KMS key. No key policy to manage, and
-            # etcd lives on this volume -- cluster state at rest is every
-            # Secret in the cluster.
-            Encrypted: true
+            Encrypted: true   # account-default aws/ebs key; etcd lives here
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -404,16 +373,9 @@ Resources:
         - Key: Role
           Value: worker
 
-  # Stable public address for the ingress controller.
-  #
-  # There is no cloud-controller-manager in this cluster, so Service
-  # type: LoadBalancer would stay Pending forever -- nothing exists to call the
-  # ELB API. Running cloud-provider-aws would fix that, at ~$16/month for an NLB
-  # plus a broad ELB/EC2 grant on the node role that no workload isolation
-  # protects. An EIP buys the same stable entry point for nothing.
-  #
-  # This replaces worker01's auto-assigned public IP rather than adding a fourth
-  # address, so it is cost-neutral against the IPv4 charge.
+  # Ingress entry point. No cloud-controller-manager here, so type: LoadBalancer
+  # would sit Pending forever. Replaces worker01's auto-assigned IP, so it adds
+  # no IPv4 charge. See docs/DESIGN.md.
   IngressEip:
     Type: AWS::EC2::EIP
     Properties:
@@ -447,10 +409,7 @@ Resources:
             VolumeSize: !Ref RootVolumeSize
             VolumeType: gp3
             DeleteOnTermination: true
-            # Account-default aws/ebs KMS key. No key policy to manage, and
-            # etcd lives on this volume -- cluster state at rest is every
-            # Secret in the cluster.
-            Encrypted: true
+            Encrypted: true   # account-default aws/ebs key; etcd lives here
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -492,10 +451,8 @@ Outputs:
     Description: Stable public address for the ingress controller.
     Value: !Ref IngressEip
 
-  # Deliberately the EIP, not !GetAtt Worker1.PublicIp. GetAtt resolves at
-  # instance-create time, before IngressEipAssociation runs, so it would return
-  # the auto-assigned address that the association then replaces -- and every
-  # SSH in phase 2 would target a dead IP.
+  # The EIP, not !GetAtt Worker1.PublicIp: GetAtt resolves before the
+  # association runs and would return the address it replaces.
   Worker1PublicIp:
     Value: !Ref IngressEip
 
@@ -515,8 +472,7 @@ Outputs:
   SecurityGroupId:
     Value: !Ref ClusterSecurityGroup
 
-  # Instance IDs are what 'aws ssm start-session --target' needs. Without these
-  # the SSM path requires a describe-instances call to be usable at all.
+  # Needed by 'aws ssm start-session --target'.
   ControlPlaneInstanceId:
     Value: !Ref ControlPlane
 
