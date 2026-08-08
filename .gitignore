@@ -7,6 +7,9 @@
 .kube/
 admin.conf
 
+# Generated node env and install logs
+.build/
+
 # Generated user certs from the CSR workflow
 users/*/
 !users/.gitkeep

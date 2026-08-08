@@ -1,13 +1,8 @@
 #!/usr/bin/env bash
-# =============================================================================
 # bootstrap.sh - kubeadm Kubernetes on AWS EC2
-#
-#   Phase 1 (--infra)    CloudFormation. Declarative, idempotent by construction.
-#   Phase 2 (--cluster)  Bash over SSH. Imperative, idempotent by artifact guard,
-#                        because kubeadm's own state lives on disk.
-#
-# The two phases are deliberately different. See README for the reasoning.
-# =============================================================================
+#   --infra    CloudFormation, idempotent by construction
+#   --cluster  bash over SSH, idempotent by artifact guard
+# See docs/DESIGN.md for why the two phases differ.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -31,6 +26,7 @@ Usage: ./bootstrap.sh [FLAG]
   --cluster    Install and configure Kubernetes with kubeadm on those instances
   --all        Run --infra then --cluster
   --status     Show what currently exists
+  --reset      kubeadm reset all three nodes, leaving the instances up
   --destroy    Delete the CloudFormation stack and all resources
   --help       This message
 
@@ -62,11 +58,8 @@ cmd_infra() {
   esac
 
   log "deploying stack: ${STACK_NAME}"
-  # 'deploy' is a no-op when the template and parameters are unchanged, which is
-  # where phase 1 gets its idempotency for free.
-  # CAPABILITY_IAM is required because the template creates a node role and
-  # instance profile for SSM. Without it, deploy fails with an "Requires
-  # capabilities" error that does not name the resource responsible.
+  # 'deploy' no-ops when nothing changed -- that is phase 1's idempotency.
+  # CAPABILITY_IAM is required by the SSM node role.
   aws cloudformation deploy \
     --template-file "${TEMPLATE}" \
     --stack-name "${STACK_NAME}" \
@@ -96,7 +89,8 @@ cmd_infra() {
 }
 
 # =============================================================================
-# Phase 2 - placeholder until the node scripts land
+# Phase 2 - Kubernetes. Idempotent by artifact guard, not reconciliation:
+# only the files kubeadm writes can say whether init succeeded.
 # =============================================================================
 cmd_cluster() {
   step "Phase 2: Kubernetes"
@@ -105,20 +99,118 @@ cmd_cluster() {
   stack_exists || die "no infrastructure found. Run: ./bootstrap.sh --infra"
   fetch_private_key
 
-  local cp_public cp_private w1_public w2_public
-  cp_public="$(stack_output ControlPlanePublicIp)"
-  cp_private="$(stack_output ControlPlanePrivateIp)"
-  w1_public="$(stack_output Worker1PublicIp)"
-  w2_public="$(stack_output Worker2PublicIp)"
+  local cp w1 w2
+  cp="$(stack_output ControlPlanePublicIp)"
+  w1="$(stack_output Worker1PublicIp)"
+  w2="$(stack_output Worker2PublicIp)"
 
-  for h in "${cp_public}" "${w1_public}" "${w2_public}"; do
-    wait_for_ssh "${h}"
+  render_node_env "${cp}" >/dev/null
+  mkdir -p "${LOG_DIR}"
+
+  for h in "${cp}" "${w1}" "${w2}"; do wait_for_ssh "${h}"; done
+
+  # Three independent apt runs of several minutes each; serialising them triples
+  # wall clock for no benefit. Logs surface only on failure.
+  step "Host preparation (parallel, logging to ${LOG_DIR})"
+  local pids=() hosts=("${cp}" "${w1}" "${w2}") failed=0
+  for h in "${hosts[@]}"; do
+    ( push_node_bundle "${h}" && run_node_script "${h}" 00-common.sh ) \
+      >"${LOG_DIR}/${h}.log" 2>&1 &
+    pids+=("$!")
+    log "started: ${h}"
   done
+  local i
+  for i in "${!pids[@]}"; do
+    if wait "${pids[$i]}"; then
+      ok "prepared: ${hosts[$i]}"
+    else
+      warn "FAILED: ${hosts[$i]} -- last 20 lines:"
+      tail -20 "${LOG_DIR}/${hosts[$i]}.log" >&2
+      failed=1
+    fi
+  done
+  (( failed == 0 )) || die "host preparation failed; full logs in ${LOG_DIR}"
 
-  warn "phase 2 node scripts not yet wired up"
-  log  "control plane : ${cp_public} (private ${cp_private})"
-  log  "worker01      : ${w1_public}"
-  log  "worker02      : ${w2_public}"
+  # --- Control plane ----------------------------------------------------------
+  step "Control plane"
+  run_node_script "${cp}" 10-control-plane.sh
+
+  # The join command embeds a bootstrap token: written 0600, shredded after use,
+  # never passed on a command line where ps would expose it.
+  step "Joining workers"
+  local join_file="${BUILD_DIR}/join-command"
+  ( umask 077; ssh_node "${cp}" "sudo kubeadm token create --print-join-command" \
+      > "${join_file}" )
+  [[ -s "${join_file}" ]] || die "could not generate a join command"
+
+  pids=(); failed=0
+  local workers=("${w1}" "${w2}")
+  for h in "${workers[@]}"; do
+    ( scp_node "${join_file}" "${h}" "${NODE_STAGE}/join-command" \
+        && run_node_script "${h}" 20-worker-join.sh ) \
+      >>"${LOG_DIR}/${h}.log" 2>&1 &
+    pids+=("$!")
+  done
+  for i in "${!pids[@]}"; do
+    if wait "${pids[$i]}"; then
+      ok "joined: ${workers[$i]}"
+    else
+      warn "FAILED to join: ${workers[$i]} -- last 20 lines:"
+      tail -20 "${LOG_DIR}/${workers[$i]}.log" >&2
+      failed=1
+    fi
+  done
+  rm -f "${join_file}"
+  (( failed == 0 )) || die "worker join failed; full logs in ${LOG_DIR}"
+
+  # --- CNI --------------------------------------------------------------------
+  step "CNI (${CNI})"
+  run_node_script "${cp}" 30-cni.sh
+
+  fetch_kubeconfig "${cp}"
+  cmd_status
+}
+
+# admin.conf references the private IP, unreachable from a laptop; repoint it at
+# the split-horizon hostname.
+fetch_kubeconfig() {
+  local cp="$1"
+  mkdir -p "$(dirname "${KUBECONFIG_LOCAL}")"
+  ( umask 077
+    ssh_node "${cp}" "sudo cat /etc/kubernetes/admin.conf" \
+      | sed "s|server: https://.*|server: https://${CP_ENDPOINT}:6443|" \
+      > "${KUBECONFIG_LOCAL}" )
+  [[ -s "${KUBECONFIG_LOCAL}" ]] || die "failed to retrieve admin.conf"
+  ok "kubeconfig written: ${KUBECONFIG_LOCAL}"
+}
+
+# =============================================================================
+# Reset - tear the cluster down without destroying the machines, so a clean
+# rebuild can be rehearsed before the demo.
+# =============================================================================
+cmd_reset() {
+  step "Reset cluster"
+  require_cmd aws ssh scp
+  require_aws_auth
+  stack_exists || die "no infrastructure found"
+  fetch_private_key
+
+  local cp w1 w2
+  cp="$(stack_output ControlPlanePublicIp)"
+  w1="$(stack_output Worker1PublicIp)"
+  w2="$(stack_output Worker2PublicIp)"
+
+  printf '\n  This runs kubeadm reset on all three nodes. The EC2 instances stay up.\n'
+  read -r -p "  Type 'reset' to confirm: " reply
+  [[ "${reply}" == "reset" ]] || die "aborted"
+
+  render_node_env "${cp}" >/dev/null
+  for h in "${w1}" "${w2}" "${cp}"; do
+    push_node_bundle "${h}"
+    run_node_script "${h}" 90-reset.sh
+  done
+  rm -f "${KUBECONFIG_LOCAL}"
+  ok "cluster reset; run --cluster to rebuild"
 }
 
 # =============================================================================
@@ -137,22 +229,27 @@ cmd_status() {
     return 0
   fi
 
-  local cp_public cp_private w1 w2
+  local cp_public cp_private w1 w2 ingress
   cp_public="$(stack_output ControlPlanePublicIp)"
   cp_private="$(stack_output ControlPlanePrivateIp)"
   w1="$(stack_output Worker1PublicIp)"
   w2="$(stack_output Worker2PublicIp)"
+  ingress="$(stack_output IngressPublicIp)"
 
   cat <<EOF
 
   control plane : ${cp_public}  (private ${cp_private})
-  worker01      : ${w1}
+  worker01      : ${w1}  (ingress)
   worker02      : ${w2}
 
   ssh -i ${SSH_KEY_PATH} ${SSH_USER}@${cp_public}
 
-  Add to your laptop /etc/hosts so the API certSAN matches:
+  Add to your laptop /etc/hosts -- the first line makes the API certSAN match,
+  the second points the site hostname at the ingress:
     ${cp_public}  ${CP_ENDPOINT}
+    ${ingress}  ${SITE_HOSTNAME}
+
+  export KUBECONFIG=${KUBECONFIG_LOCAL}
 
 EOF
 
@@ -197,6 +294,7 @@ main() {
     --cluster) cmd_cluster ;;
     --all)     cmd_infra; cmd_cluster ;;
     --status)  cmd_status ;;
+    --reset)   cmd_reset ;;
     --destroy) cmd_destroy ;;
     --help|-h) usage ;;
     "")        usage; exit 1 ;;
