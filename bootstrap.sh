@@ -16,6 +16,13 @@ source "${REPO_ROOT}/config.env"
 # shellcheck source=scripts/lib.sh
 source "${REPO_ROOT}/scripts/lib.sh"
 
+# Make repo-relative paths absolute so anything printed here survives a cd --
+# an exported relative KUBECONFIG breaks as soon as you change directory.
+for _p in SSH_KEY_DIR SSH_KEY_PATH KUBECONFIG_LOCAL BUILD_DIR LOG_DIR; do
+  [[ "${!_p}" == /* ]] || printf -v "${_p}" '%s/%s' "${REPO_ROOT}" "${!_p#./}"
+done
+unset _p
+
 TEMPLATE="${REPO_ROOT}/infra/infra.yaml"
 
 usage() {
