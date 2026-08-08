@@ -69,13 +69,19 @@ The exercise suggests free tier. Three nodes do not fit it: `kubeadm`'s
 preflight requires 2 vCPU and roughly 1700MB free memory, so `t3.micro` fails
 outright.
 
-| Node | Type | ~USD/hr |
+| Item | Detail | ~USD/hr |
 |---|---|---|
 | Control plane | `t3.medium` | 0.0416 |
 | Worker ×2 | `t3.small` | 0.0208 each |
-| **Total** | | **~0.083** |
+| EBS | 3 × 30GB gp3 | 0.0099 |
+| Public IPv4 | 2 EIP + 1 auto-assigned | 0.0150 |
+| **Total** | | **~0.108** |
 
-Roughly two dollars a day if left running, plus EBS. `--destroy` when idle.
+Roughly **$2.59/day**, or **$18/week** if left running. `--destroy` when idle.
+
+Note the IPv4 line: since February 2024 AWS bills every public IPv4 address at
+$0.005/hr whether or not it is attached. Two of the three here are Elastic IPs
+and are deliberate; see the design notes.
 
 ---
 
@@ -94,8 +100,37 @@ Set this on your laptop after `--infra`:
 
 `--status` prints the exact line.
 
-**Elastic IP.** A stop/start would otherwise change the public IP and invalidate
-every `certSAN` and kubeconfig mid-week.
+**Two Elastic IPs.** One on the control plane: a stop/start would otherwise
+change the public IP and invalidate every `certSAN` and kubeconfig mid-week. One
+on `worker01`, which is the ingress entry point — the nginx site's hostname
+resolves there.
+
+The second EIP exists because there is no cloud-controller-manager in this
+cluster, so a `Service` of `type: LoadBalancer` would sit `Pending` forever:
+nothing is running that can call the ELB API. Installing `cloud-provider-aws`
+would fix that and is entirely possible with kubeadm — it is a component nobody
+installed, not a capability kubeadm lacks. It was rejected on two grounds: an
+NLB costs ~$16/month against a brief that asks for no expense, and the IAM grant
+it needs (create/delete load balancers, modify security groups, attach ENIs)
+would land on the **node role**, where no workload isolation protects it. An
+Elastic IP buys the same stable entry point for the price of an IPv4 address.
+
+The tradeoff is that a single EIP on a single worker is a SPOF. So is the single
+control plane. Both are acceptable for a POC and neither is hidden.
+
+**Instance IAM role — SSM only.** Each node carries an instance profile with
+`AmazonSSMManagedInstanceCore` and nothing else. That is enough for Session
+Manager, which means port 22 and the key pair could be dropped entirely — a
+better access story than distributing a `.pem`, and the same argument this
+exercise makes about kubeconfigs one layer down.
+
+Route53 permissions for a cert-manager DNS-01 solver are deliberately **not**
+granted. kubeadm has no IRSA, so pods inherit the node role: every workload on
+the box would get DNS-write. If the public-domain path is taken, that wants a
+scoped credential delivered as a `Secret`, not a node-wide grant.
+
+**Encrypted root volumes.** Account-default `aws/ebs` key. etcd lives on the
+control plane volume, so this is every `Secret` in the cluster at rest.
 
 **Static private IPs.** `10.0.1.10`, `.21`, `.22` are assigned explicitly so
 `certSANs` and hostnames stay identical across rebuilds.
@@ -144,8 +179,9 @@ The cluster has no public DNS name, which constrains the certificate story:
 
 - **In-cluster:** CoreDNS handles service discovery. Nothing to configure.
 - **API server:** `k8s-api.internal` via split-horizon `/etc/hosts`, above.
-- **The nginx site:** resolved by a laptop `/etc/hosts` entry pointing at a
-  worker's public IP, reached over a NodePort.
+- **The nginx site:** a laptop `/etc/hosts` entry pointing at the **ingress
+  Elastic IP** on `worker01`, where Traefik binds `:80` and `:443` directly.
+  `--status` prints the line.
 
 ### TLS
 
@@ -169,15 +205,63 @@ external dependencies. The tradeoff is stated explicitly rather than hidden.
 
 ### Terminating TLS
 
-The nginx pod terminates TLS itself, using a cert-manager-issued `Secret`
-mounted directly. Fewest moving parts, and it is the most literal reading of the
-requirement.
+**Traefik terminates TLS**, using the cert-manager-issued `Secret`. The nginx
+pod behind it serves plain HTTP on the cluster network only. The certificate
+chain is unchanged — cert-manager still issues it, Traefik just consumes it.
 
-Ingress NGINX is **not** used: SIG Network and the Security Response Committee
-retired the project on 24 March 2026 — no releases, no bugfixes, no security
-patches since. Deploying unmaintained software to terminate TLS would be the
-wrong choice to defend at a security company. If ingress-style routing is added
-later, Gateway API with cert-manager's gateway support is the current path.
+The requirements say nothing about how the application is exposed. They specify
+the certificate **issuer** (cert-manager) and are silent on the **terminator**,
+so pod-level TLS, an Ingress, and a Gateway are all compliant readings. An
+ingress controller was chosen because it gives one stable entry point for any
+number of future routes, and because it makes the GitOps objective tractable —
+a new site becomes an `Ingress` object rather than new infrastructure.
+
+**On ingress-nginx.** It is not used here, and that is a choice rather than a
+constraint — nothing in the requirements prohibits it. SIG Network and the
+Security Response Committee retired the project on 24 March 2026: no releases,
+no bugfixes, no security patches since. Deploying unmaintained software to
+terminate TLS is difficult to defend at a security company. Traefik is
+maintained, familiar, and CNI-agnostic. Gateway API via Cilium was the other
+candidate and is noted under the CNI section.
+
+### Cluster networking
+
+Three decisions that are easy to conflate, made at different layers:
+
+| Layer | Question | Choice |
+|---|---|---|
+| Entry point | How does traffic reach the cluster? | Elastic IP on `worker01` |
+| Service dataplane | How does a Service forward packets? | kube-proxy, **iptables** mode |
+| HTTP routing | Which hostname goes to which Service? | Traefik reading `Ingress` objects |
+
+**CNI — Cilium.** Chosen over Calico and Flannel for two reasons. Flannel has no
+NetworkPolicy support at all, which rules it out at a security company. Between
+the remaining two, Cilium ships **Hubble**, which gives a live flow view with
+per-flow policy verdicts — and the requirements ask that users be able to
+*deploy, access and monitor* the application. `hubble observe --verdict DROPPED`
+makes a denied connection visible in one command. Calico's equivalent
+observability was historically the commercial tier; its open-source Whisker UI
+narrows the gap but is newer and thinner.
+
+**kube-proxy in iptables mode.** IPVS silently degrades to iptables if the
+`ip_vs` kernel modules are not loaded — you would believe you were running IPVS
+and not be. Cilium's `kubeProxyReplacement` is the more modern answer and was
+rejected only because it changes how service routing is debugged: `iptables-save`
+is common ground with any reviewer, `cilium bpf lb list` is not. That is a demo
+consideration, not a technical one, and it is worth saying so out loud.
+
+**Traefik on `hostPort`, not `hostNetwork`.** Both give a clean `:443` on the
+node. `hostNetwork` puts the pod in the node's network namespace, which costs it
+its pod identity: a `NetworkPolicy` selecting `app=traefik` silently will not
+match, because the traffic appears to come from the node — and Hubble attributes
+those flows to the host rather than to Traefik, losing the pod exactly where you
+most want to see it. `hostPort` keeps Traefik on the pod network, so policy and
+observability both behave as written.
+
+The cost is one Cilium setting: `hostPort` needs either `kubeProxyReplacement`
+or CNI chaining with the `portmap` plugin. The latter is used here, since it
+preserves the iptables decision above. `hostNetwork` remains the fallback if it
+misbehaves — that swap is a few lines of manifest, not a rebuild.
 
 ### User access
 
@@ -196,9 +280,12 @@ discussion.
 .
 ├── bootstrap.sh          # dispatcher
 ├── config.env            # single source of truth
+├── config.env.local      # optional, uncommitted, overrides the above
 ├── infra/
-│   └── infra.yaml        # CloudFormation: VPC, SG, key pair, EIP, 3 instances
+│   └── infra.yaml        # CloudFormation: VPC, SG, IAM, key pair, 2 EIPs, 3 instances
 ├── scripts/
 │   └── lib.sh            # logging, preflight, SSH, stack-output helpers
-└── node/                 # scripts executed on the instances (phase 2)
+├── node/                 # scripts executed on the instances (phase 2)
+└── docs/
+    └── DESIGN.md         # design decisions and tradeoffs
 ```
