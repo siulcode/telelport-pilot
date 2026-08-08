@@ -76,6 +76,31 @@ Parameters:
     Default: k8s-api.internal
     Description: Split-horizon hostname for the API server. Added to certSANs.
 
+  # kubeadm keys nodes on hostname. These are parameters rather than literals so
+  # config.env stays the single source of truth for names as well as addresses.
+  ControlPlaneHostname:
+    Type: String
+    Default: cp01
+
+  Worker1Hostname:
+    Type: String
+    Default: worker01
+
+  Worker2Hostname:
+    Type: String
+    Default: worker02
+
+# =============================================================================
+# Conditions
+# =============================================================================
+Conditions:
+
+  # PublicIngressCidr defaults to a closed value and is widened only for a
+  # public ACME HTTP-01 challenge. If it is set to the same CIDR as AdminCidr,
+  # the 80/443 rules below would duplicate the admin rules and EC2 rejects the
+  # whole group with InvalidPermission.Duplicate.
+  PublicIngressDistinct: !Not [!Equals [!Ref PublicIngressCidr, !Ref AdminCidr]]
+
 # =============================================================================
 # Network
 # =============================================================================
@@ -187,21 +212,35 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: !Ref AdminCidr
-        - Description: HTTP for ACME HTTP-01 (closed by default)
-          IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: !Ref PublicIngressCidr
-        - Description: HTTPS public (closed by default)
-          IpProtocol: tcp
-          FromPort: 443
-          ToPort: 443
-          CidrIp: !Ref PublicIngressCidr
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-sg'
         - Key: Project
           Value: !Ref ProjectName
+
+  # Separate resources so they can be conditioned off when PublicIngressCidr
+  # equals AdminCidr. A Condition cannot gate an item inside an inline list.
+  PublicHttpIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: PublicIngressDistinct
+    Properties:
+      GroupId: !Ref ClusterSecurityGroup
+      Description: HTTP for ACME HTTP-01 (closed by default)
+      IpProtocol: tcp
+      FromPort: 80
+      ToPort: 80
+      CidrIp: !Ref PublicIngressCidr
+
+  PublicHttpsIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: PublicIngressDistinct
+    Properties:
+      GroupId: !Ref ClusterSecurityGroup
+      Description: HTTPS public (closed by default)
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      CidrIp: !Ref PublicIngressCidr
 
   # Self-reference must be a separate resource: the group ID does not exist
   # while the group itself is still being created.
@@ -230,6 +269,43 @@ Resources:
           Value: !Ref ProjectName
 
 # =============================================================================
+# Instance IAM role
+#
+# AmazonSSMManagedInstanceCore and nothing else. That is enough for Session
+# Manager, which is the credential-less access path: with SSM working you can
+# close port 22 entirely and drop the key pair. Worth demonstrating at a company
+# that sells exactly this.
+#
+# Deliberately NOT granting Route53 for a cert-manager DNS-01 solver. kubeadm
+# has no IRSA, so pods inherit the node role -- every workload on the box would
+# get DNS-write. If the real-domain path is taken later, that needs a scoped
+# credential delivered as a Secret, not a node-wide grant.
+# =============================================================================
+  NodeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-node-role'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  NodeInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref NodeRole
+
+# =============================================================================
 # Instances
 # =============================================================================
   ControlPlane:
@@ -238,6 +314,7 @@ Resources:
       ImageId: !Ref AmiId
       InstanceType: !Ref ControlPlaneInstanceType
       KeyName: !Ref KeyPair
+      IamInstanceProfile: !Ref NodeInstanceProfile
       SubnetId: !Ref PublicSubnet
       PrivateIpAddress: !Ref ControlPlanePrivateIp
       SecurityGroupIds:
@@ -248,15 +325,19 @@ Resources:
             VolumeSize: !Ref RootVolumeSize
             VolumeType: gp3
             DeleteOnTermination: true
+            # Account-default aws/ebs KMS key. No key policy to manage, and
+            # etcd lives on this volume -- cluster state at rest is every
+            # Secret in the cluster.
+            Encrypted: true
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -euxo pipefail
-          hostnamectl set-hostname cp01
+          hostnamectl set-hostname ${ControlPlaneHostname}
           cat >> /etc/hosts <<EOF
-          ${ControlPlanePrivateIp} cp01 ${ApiEndpointName}
-          ${Worker1PrivateIp} worker01
-          ${Worker2PrivateIp} worker02
+          ${ControlPlanePrivateIp} ${ControlPlaneHostname} ${ApiEndpointName}
+          ${Worker1PrivateIp} ${Worker1Hostname}
+          ${Worker2PrivateIp} ${Worker2Hostname}
           EOF
       Tags:
         - Key: Name
@@ -290,6 +371,7 @@ Resources:
       ImageId: !Ref AmiId
       InstanceType: !Ref WorkerInstanceType
       KeyName: !Ref KeyPair
+      IamInstanceProfile: !Ref NodeInstanceProfile
       SubnetId: !Ref PublicSubnet
       PrivateIpAddress: !Ref Worker1PrivateIp
       SecurityGroupIds:
@@ -300,15 +382,19 @@ Resources:
             VolumeSize: !Ref RootVolumeSize
             VolumeType: gp3
             DeleteOnTermination: true
+            # Account-default aws/ebs KMS key. No key policy to manage, and
+            # etcd lives on this volume -- cluster state at rest is every
+            # Secret in the cluster.
+            Encrypted: true
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -euxo pipefail
-          hostnamectl set-hostname worker01
+          hostnamectl set-hostname ${Worker1Hostname}
           cat >> /etc/hosts <<EOF
-          ${ControlPlanePrivateIp} cp01 ${ApiEndpointName}
-          ${Worker1PrivateIp} worker01
-          ${Worker2PrivateIp} worker02
+          ${ControlPlanePrivateIp} ${ControlPlaneHostname} ${ApiEndpointName}
+          ${Worker1PrivateIp} ${Worker1Hostname}
+          ${Worker2PrivateIp} ${Worker2Hostname}
           EOF
       Tags:
         - Key: Name
@@ -318,12 +404,39 @@ Resources:
         - Key: Role
           Value: worker
 
+  # Stable public address for the ingress controller.
+  #
+  # There is no cloud-controller-manager in this cluster, so Service
+  # type: LoadBalancer would stay Pending forever -- nothing exists to call the
+  # ELB API. Running cloud-provider-aws would fix that, at ~$16/month for an NLB
+  # plus a broad ELB/EC2 grant on the node role that no workload isolation
+  # protects. An EIP buys the same stable entry point for nothing.
+  #
+  # This replaces worker01's auto-assigned public IP rather than adding a fourth
+  # address, so it is cost-neutral against the IPv4 charge.
+  IngressEip:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-ingress-eip'
+        - Key: Project
+          Value: !Ref ProjectName
+
+  IngressEipAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt IngressEip.AllocationId
+      InstanceId: !Ref Worker1
+
   Worker2:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Ref AmiId
       InstanceType: !Ref WorkerInstanceType
       KeyName: !Ref KeyPair
+      IamInstanceProfile: !Ref NodeInstanceProfile
       SubnetId: !Ref PublicSubnet
       PrivateIpAddress: !Ref Worker2PrivateIp
       SecurityGroupIds:
@@ -334,15 +447,19 @@ Resources:
             VolumeSize: !Ref RootVolumeSize
             VolumeType: gp3
             DeleteOnTermination: true
+            # Account-default aws/ebs KMS key. No key policy to manage, and
+            # etcd lives on this volume -- cluster state at rest is every
+            # Secret in the cluster.
+            Encrypted: true
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
           set -euxo pipefail
-          hostnamectl set-hostname worker02
+          hostnamectl set-hostname ${Worker2Hostname}
           cat >> /etc/hosts <<EOF
-          ${ControlPlanePrivateIp} cp01 ${ApiEndpointName}
-          ${Worker1PrivateIp} worker01
-          ${Worker2PrivateIp} worker02
+          ${ControlPlanePrivateIp} ${ControlPlaneHostname} ${ApiEndpointName}
+          ${Worker1PrivateIp} ${Worker1Hostname}
+          ${Worker2PrivateIp} ${Worker2Hostname}
           EOF
       Tags:
         - Key: Name
@@ -369,8 +486,18 @@ Outputs:
     Description: Elastic IP. SSH target and laptop-side certSAN.
     Value: !Ref ControlPlaneEip
 
+  # Elastic IP on worker01. This is the ingress entry point and the address the
+  # nginx site's hostname resolves to in your laptop /etc/hosts.
+  IngressPublicIp:
+    Description: Stable public address for the ingress controller.
+    Value: !Ref IngressEip
+
+  # Deliberately the EIP, not !GetAtt Worker1.PublicIp. GetAtt resolves at
+  # instance-create time, before IngressEipAssociation runs, so it would return
+  # the auto-assigned address that the association then replaces -- and every
+  # SSH in phase 2 would target a dead IP.
   Worker1PublicIp:
-    Value: !GetAtt Worker1.PublicIp
+    Value: !Ref IngressEip
 
   Worker2PublicIp:
     Value: !GetAtt Worker2.PublicIp
@@ -387,3 +514,14 @@ Outputs:
 
   SecurityGroupId:
     Value: !Ref ClusterSecurityGroup
+
+  # Instance IDs are what 'aws ssm start-session --target' needs. Without these
+  # the SSM path requires a describe-instances call to be usable at all.
+  ControlPlaneInstanceId:
+    Value: !Ref ControlPlane
+
+  Worker1InstanceId:
+    Value: !Ref Worker1
+
+  Worker2InstanceId:
+    Value: !Ref Worker2

@@ -15,6 +15,9 @@ cd "${REPO_ROOT}"
 
 # shellcheck source=config.env
 source "${REPO_ROOT}/config.env"
+# Local overrides, uncommitted. Sourced second so it wins.
+# shellcheck source=/dev/null
+[[ -f "${REPO_ROOT}/config.env.local" ]] && source "${REPO_ROOT}/config.env.local"
 # shellcheck source=scripts/lib.sh
 source "${REPO_ROOT}/scripts/lib.sh"
 
@@ -61,10 +64,14 @@ cmd_infra() {
   log "deploying stack: ${STACK_NAME}"
   # 'deploy' is a no-op when the template and parameters are unchanged, which is
   # where phase 1 gets its idempotency for free.
+  # CAPABILITY_IAM is required because the template creates a node role and
+  # instance profile for SSM. Without it, deploy fails with an "Requires
+  # capabilities" error that does not name the resource responsible.
   aws cloudformation deploy \
     --template-file "${TEMPLATE}" \
     --stack-name "${STACK_NAME}" \
     --region "${AWS_REGION}" \
+    --capabilities CAPABILITY_IAM \
     --no-fail-on-empty-changeset \
     --parameter-overrides \
       ProjectName="${PROJECT_NAME}" \
@@ -78,7 +85,10 @@ cmd_infra() {
       ControlPlanePrivateIp="${CP_PRIVATE_IP}" \
       Worker1PrivateIp="${WORKER1_PRIVATE_IP}" \
       Worker2PrivateIp="${WORKER2_PRIVATE_IP}" \
-      ApiEndpointName="${CP_ENDPOINT}"
+      ApiEndpointName="${CP_ENDPOINT}" \
+      ControlPlaneHostname="${CP_HOSTNAME}" \
+      Worker1Hostname="${WORKER1_HOSTNAME}" \
+      Worker2Hostname="${WORKER2_HOSTNAME}"
 
   ok "stack deployed"
   fetch_private_key
