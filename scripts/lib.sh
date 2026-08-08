@@ -93,20 +93,29 @@ wait_for_ssh() {
 # --- Private key retrieval ---------------------------------------------------
 # CloudFormation put the private half in SSM as a SecureString. Fetch once,
 # lock it to 0600, and never commit it.
+# Written via a temp file: a redirect straight to SSH_KEY_PATH creates the file
+# even when the fetch fails, and the [[ -f ]] guard above would then report a
+# zero-byte key as "already present" on every subsequent run.
 fetch_private_key() {
-  local key_id
-  if [[ -f "${SSH_KEY_PATH}" ]]; then
+  local key_id tmp
+  if [[ -s "${SSH_KEY_PATH}" ]]; then
     ok "private key already present: ${SSH_KEY_PATH}"
     return 0
   fi
   key_id="$(stack_output KeyPairId)"
   mkdir -p "${SSH_KEY_DIR}"
-  aws ssm get-parameter \
-    --name "/ec2/keypair/${key_id}" \
-    --with-decryption \
-    --region "${AWS_REGION}" \
-    --query 'Parameter.Value' --output text > "${SSH_KEY_PATH}" \
-    || die "could not read private key from SSM"
+  tmp="$(mktemp "${SSH_KEY_DIR}/.key.XXXXXX")"
+  chmod 600 "${tmp}"
+  if ! aws ssm get-parameter \
+        --name "/ec2/keypair/${key_id}" \
+        --with-decryption \
+        --region "${AWS_REGION}" \
+        --query 'Parameter.Value' --output text > "${tmp}"; then
+    rm -f "${tmp}"
+    die "could not read private key from SSM (/ec2/keypair/${key_id})"
+  fi
+  [[ -s "${tmp}" ]] || { rm -f "${tmp}"; die "SSM returned an empty private key"; }
+  mv "${tmp}" "${SSH_KEY_PATH}"
   chmod 600 "${SSH_KEY_PATH}"
   ok "private key written: ${SSH_KEY_PATH}"
 }
