@@ -13,3 +13,6 @@ admin.conf
 # Generated user certs from the CSR workflow
 users/*/
 !users/.gitkeep
+
+# Local functional tests - not part of the deliverable
+tests/test_*
