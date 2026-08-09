@@ -49,9 +49,10 @@ locally with an uncommitted `config.env.local`.
 ├── infra/infra.yaml      CloudFormation: VPC, SG, IAM, key pair, EIPs, instances
 ├── onboard-user.sh       issue a user certificate and kubeconfig
 ├── libs/                 sourced or pushed, never run directly
-│   ├── lib-bootstrap.sh      logging, preflight, SSH, stack-output helpers
-│   ├── lib-platform.sh       cert-manager, issuers, Traefik, RBAC
-│   ├── lib-users.sh          CSR onboarding steps
+│   ├── common-lib.sh         logging, preflight, SSH, stack-output helpers
+│   ├── cluster-lib.sh        the --infra/--cluster/--reset/--destroy commands
+│   ├── platform-lib.sh       cert-manager, issuers, Traefik, RBAC
+│   ├── users-lib.sh          CSR onboarding steps
 │   └── node/                 executed on the instances by --cluster
 │       ├── 00-common.sh          swap, modules, sysctl, containerd, k8s
 │       ├── 10-control-plane.sh   kubeadm init

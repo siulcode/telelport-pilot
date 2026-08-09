@@ -8,11 +8,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "${REPO_ROOT}"
-# shellcheck source=../config.env
+# shellcheck source=config.env
 source config.env
 [[ -f config.env.local ]] && source config.env.local
-# shellcheck source=lib-users.sh
-source libs/lib-users.sh
+# shellcheck source=libs/users-lib.sh
+source libs/users-lib.sh
 
 USER_NAME="${1:-}"; GROUP="${2:-}"; DAYS="${3:-30}"
 [[ -n "${USER_NAME}" && -n "${GROUP}" ]] || {
