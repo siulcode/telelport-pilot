@@ -15,6 +15,8 @@ source "${REPO_ROOT}/config.env"
 [[ -f "${REPO_ROOT}/config.env.local" ]] && source "${REPO_ROOT}/config.env.local"
 # shellcheck source=libs/lib-bootstrap.sh
 source "${REPO_ROOT}/libs/lib-bootstrap.sh"
+# shellcheck source=libs/lib-platform.sh
+source "${REPO_ROOT}/libs/lib-platform.sh"
 
 # Make repo-relative paths absolute so anything printed here survives a cd --
 # an exported relative KUBECONFIG breaks as soon as you change directory.
@@ -30,7 +32,7 @@ usage() {
 Usage: ./bootstrap.sh [FLAG]
 
   --infra      Deploy VPC, security group, key pair, EIP, and 3 EC2 instances
-  --cluster    Install and configure Kubernetes with kubeadm on those instances
+  --cluster    kubeadm + CNI, then cert-manager, Traefik, and the demo namespace
   --all        Run --infra then --cluster
   --status     Show what currently exists
   --reset      kubeadm reset all three nodes, leaving the instances up
@@ -101,7 +103,7 @@ cmd_infra() {
 # =============================================================================
 cmd_cluster() {
   step "Phase 2: Kubernetes"
-  require_cmd aws ssh scp
+  require_cmd aws ssh scp kubectl
   require_aws_auth
   stack_exists || die "no infrastructure found. Run: ./bootstrap.sh --infra"
   fetch_private_key
@@ -175,6 +177,7 @@ cmd_cluster() {
   run_node_script "${cp}" 30-cni.sh
 
   fetch_kubeconfig "${cp}"
+  platform_install
   cmd_status
 }
 
@@ -197,7 +200,7 @@ fetch_kubeconfig() {
 # =============================================================================
 cmd_reset() {
   step "Reset cluster"
-  require_cmd aws ssh scp
+  require_cmd aws ssh scp kubectl
   require_aws_auth
   stack_exists || die "no infrastructure found"
   fetch_private_key

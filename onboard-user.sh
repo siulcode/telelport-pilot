@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # Onboard a Kubernetes user through the CSR API.
-#   ./libs/onboard-user.sh <username> <group> [valid-days]
+#   ./onboard-user.sh <username> <group> [valid-days]
 #
 # Deliberately not wired into bootstrap.sh: every step is manual toil repeated
 # per user, per access change, per expiry -- and that toil is the answer to
 # "what is wrong with managing access this way". Meant to be read while it runs.
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "${REPO_ROOT}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "${REPO_ROOT}"
 # shellcheck source=../config.env
 source config.env
 [[ -f config.env.local ]] && source config.env.local

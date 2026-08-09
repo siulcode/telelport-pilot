@@ -24,12 +24,18 @@ directly. No distribution wrapper, no bootstrap abstraction.
 
 ```
 ./bootstrap.sh --infra      VPC, SG, IAM role, 2 EIPs, 3 instances
-               --cluster    OS prep, containerd, kubeadm, CNI
+               --cluster    kubeadm + CNI, then cert-manager, Traefik, RBAC
                --all        both
                --status     what exists right now
                --reset      kubeadm reset; instances stay up
                --destroy    delete the stack and everything in it
+
+./onboard-user.sh <user> <group> [days]     issue a cert and kubeconfig via the CSR API
 ```
+
+`--cluster` leaves you with a working cluster and platform. Deploying the app is
+deliberately manual and done as a restricted user — see
+[QUICK_START.md](QUICK_START.md).
 
 Every flag is safe to re-run. Configuration lives in `config.env`; override it
 locally with an uncommitted `config.env.local`.
@@ -41,17 +47,17 @@ locally with an uncommitted `config.env.local`.
 ├── bootstrap.sh          dispatcher
 ├── config.env            single source of truth
 ├── infra/infra.yaml      CloudFormation: VPC, SG, IAM, key pair, EIPs, instances
-├── libs/
+├── onboard-user.sh       issue a user certificate and kubeconfig
+├── libs/                 sourced or pushed, never run directly
 │   ├── lib-bootstrap.sh      logging, preflight, SSH, stack-output helpers
+│   ├── lib-platform.sh       cert-manager, issuers, Traefik, RBAC
 │   ├── lib-users.sh          CSR onboarding steps
-│   ├── onboard-user.sh       issue a user certificate and kubeconfig
-│   └── install-platform.sh   cert-manager, issuers, Traefik
-├── node/                 scripts executed on the instances
-│   ├── 00-common.sh      swap, modules, sysctl, containerd, k8s packages
-│   ├── 10-control-plane.sh   kubeadm init
-│   ├── 20-worker-join.sh     kubeadm join
-│   ├── 30-cni.sh             Cilium + Hubble
-│   └── 90-reset.sh           tear the cluster down, keep the machines
+│   └── node/                 executed on the instances by --cluster
+│       ├── 00-common.sh          swap, modules, sysctl, containerd, k8s
+│       ├── 10-control-plane.sh   kubeadm init
+│       ├── 20-worker-join.sh     kubeadm join
+│       ├── 30-cni.sh             Cilium + Hubble
+│       └── 90-reset.sh           tear the cluster down, keep the machines
 ├── apps/                 manifests applied to the cluster
 │   ├── rbac/                 namespace, roles, group bindings
 │   ├── cert-manager/         selfsigned -> CA issuer chain

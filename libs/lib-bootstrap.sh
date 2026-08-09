@@ -124,7 +124,7 @@ EOF
 push_node_bundle() {
   local host="$1"
   ssh_node "${host}" "rm -rf ${NODE_STAGE} && mkdir -p ${NODE_STAGE}"
-  scp_node "${REPO_ROOT}/node/." "${host}" "${NODE_STAGE}/"
+  scp_node "${REPO_ROOT}/libs/node/." "${host}" "${NODE_STAGE}/"
   scp_node "${BUILD_DIR}/node-env.sh" "${host}" "${NODE_STAGE}/node-env.sh"
 }
 

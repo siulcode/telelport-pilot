@@ -22,7 +22,7 @@
   <!-- ===== issuance ===== -->
   <rect class="hd" x="16" y="16" width="868" height="30" rx="4"/>
   <text class="h"  x="30" y="36">Issuance — once per user, entirely manual</text>
-  <text class="xs" x="868" y="36" text-anchor="end">libs/onboard-user.sh</text>
+  <text class="xs" x="868" y="36" text-anchor="end">./onboard-user.sh</text>
 
   <g>
     <rect class="box" x="16" y="62" width="132" height="66" rx="4"/>

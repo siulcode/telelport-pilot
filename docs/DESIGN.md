@@ -10,7 +10,7 @@ actual. Bash is used where it does not: CloudFormation cannot know whether
 writes — `admin.conf` for init, `kubelet.conf` for join.
 
 Keeping kubeadm in plain shell also keeps it visible. Every command that builds
-the cluster is readable in `node/`, with no indirection to explain.
+the cluster is readable in `libs/node/`, with no indirection to explain.
 
 **Known limits.** CloudFormation idempotency is stack-scoped, not
 resource-scoped: a console edit to the security group is not reverted on the

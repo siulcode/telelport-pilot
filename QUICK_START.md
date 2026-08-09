@@ -1,14 +1,16 @@
 # Quick start
 
-A three-node kubeadm cluster on AWS, from nothing, in about 20 minutes.
+From nothing to an HTTPS site on a three-node kubeadm cluster, in about 25 minutes.
 
 ## Prerequisites
 
 - `aws` CLI v2, authenticated — check with `aws sts get-caller-identity`
-- `ssh`, `scp`, `curl`
+- `kubectl`, `ssh`, `scp`, `curl`, `openssl`
 
-Nothing else. No Node, no Python, no `cdk bootstrap`.
+Nothing else. No Node, no Python, no `cdk bootstrap`, no Helm.
 Running cost is ~$2.59/day — tear it down when idle.
+
+---
 
 ## 1. Infrastructure — ~4 min
 
@@ -31,25 +33,79 @@ sudo sh -c 'printf "%s\n" "<CP_EIP>  k8s-api.internal" "<INGRESS_EIP>  nginx.dem
 The first makes the API certificate match; the second points the site hostname
 at the ingress.
 
-## 3. Cluster — ~13 min
+## 3. Cluster and platform — ~15 min
 
 ```bash
 ./bootstrap.sh --cluster
 ```
 
-Host prep runs on all three nodes in parallel, then `kubeadm init`, worker join,
-and the CNI.
-
-## 4. Verify
+Host prep on all three nodes in parallel, `kubeadm init`, worker join, Cilium,
+then cert-manager, the issuer chain, Traefik, and the `demo` namespace with its
+two Roles. Ends by writing `.kube/config` and `.build/ca.crt`.
 
 ```bash
-export KUBECONFIG=./.kube/config
+export KUBECONFIG=$PWD/.kube/config
 kubectl get nodes
 ```
 
 Three nodes `Ready`.
 
-## 5. Optional — probe the ingress path
+---
+
+## 4. Onboard a user — the CSR workflow
+
+Nothing is deployed by admin from here on. Issue a client certificate through
+the `certificates.k8s.io` API and get a kubeconfig back:
+
+```bash
+./onboard-user.sh app-deploy demo-deployers 30
+```
+
+Seven steps, printed as it goes: private key → CSR → submit → approve → the
+cluster CA signs → kubeconfig → verify. Lands in `users/app-deploy/`.
+
+For a read-only persona:
+
+```bash
+./onboard-user.sh app-view demo-viewers 30
+```
+
+## 5. Deploy the site as that user
+
+```bash
+kubectl --kubeconfig=users/app-deploy/kubeconfig apply -f apps/nginx/nginx.yaml
+kubectl --kubeconfig=users/app-deploy/kubeconfig -n demo rollout status deploy/nginx
+```
+
+ConfigMap, Deployment, Service, `Certificate`, and `Ingress` — all created by a
+certificate-authenticated user scoped to one namespace, never by `admin.conf`.
+
+## 6. Test it
+
+```bash
+curl --cacert .build/ca.crt https://nginx.demo
+```
+
+The page, over TLS, with a certificate cert-manager issued from the cluster's
+own CA. Three things worth checking while you are here:
+
+```bash
+curl -sI http://nginx.demo | head -2        # 308 redirect to HTTPS
+curl -s https://nginx.demo                  # fails: CA is not in the system store
+kubectl --kubeconfig=users/app-view/kubeconfig -n demo \
+  scale deploy/nginx --replicas=5           # 403: viewers cannot deploy
+```
+
+The deployer cannot read the TLS key either — cert-manager created the Secret,
+Traefik consumes it, and nobody who deploys the app can see it:
+
+```bash
+kubectl --kubeconfig=users/app-deploy/kubeconfig -n demo get secret nginx-tls
+```
+
+---
+
+## Optional — probe the ingress path alone
 
 ```bash
 kubectl apply -f apps/probe.yml
@@ -57,9 +113,8 @@ curl -sI http://nginx.demo          # expect HTTP/1.1 200 OK
 kubectl delete -f apps/probe.yml
 ```
 
-A bare nginx pod binding `:80` on worker01. A `200` proves DNS, the ingress
-Elastic IP, the host port, and Cilium's portmap chaining all work — worth
-checking before Traefik and cert-manager are layered on top.
+A bare nginx pod binding `:80` on worker01. Useful for isolating DNS, the
+Elastic IP, and Cilium's portmap chaining from anything Traefik does.
 
 ## Teardown
 
