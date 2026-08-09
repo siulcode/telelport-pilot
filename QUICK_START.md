@@ -5,7 +5,10 @@ From nothing to an HTTPS site on a three-node kubeadm cluster, in about 25 minut
 ## Prerequisites
 
 - `aws` CLI v2, authenticated — check with `aws sts get-caller-identity`
-- `kubectl`, `ssh`, `scp`, `curl`, `openssl`
+- `kubectl` **within one minor of v1.36** — `kubectl version` after step 3.
+  Kubernetes supports only ±1 skew; an older client mostly works and then fails
+  in confusing ways (a v1.23 client segfaulted during testing).
+- `ssh`, `scp`, `curl`, `openssl`
 
 Nothing else. No Node, no Python, no `cdk bootstrap`, no Helm.
 Running cost is ~$2.59/day — tear it down when idle.
