@@ -21,22 +21,31 @@ gitops_repo_url() {
 }
 
 gitops_install_argocd() {
-  if kubectl get ns argocd >/dev/null 2>&1; then
-    ok "argocd namespace already present"
-  else
-    local ver="${ARGOCD_VERSION:-}"
-    [[ -n "${ver}" ]] || ver="$(curl -fsSL \
-      https://api.github.com/repos/argoproj/argo-cd/releases/latest \
-      | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
-    [[ -n "${ver}" ]] || die "could not resolve an argo-cd version"
-    log "installing argo cd ${ver} (namespace-scoped: no ClusterRoles)"
-    kubectl create namespace argocd >/dev/null
-    kubectl -n argocd apply -f \
-      "https://raw.githubusercontent.com/argoproj/argo-cd/${ver}/manifests/namespace-install.yaml" >/dev/null
-  fi
+  local ver="${ARGOCD_VERSION:-}" base
+  [[ -n "${ver}" ]] || ver="$(curl -fsSL \
+    https://api.github.com/repos/argoproj/argo-cd/releases/latest \
+    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')"
+  [[ -n "${ver}" ]] || die "could not resolve an argo-cd version"
+  base="https://raw.githubusercontent.com/argoproj/argo-cd/${ver}/manifests"
+
+  # CRDs are cluster-scoped, so namespace-install.yaml deliberately omits them.
+  # Installing the API types is an admin act, and separate from granting Argo
+  # any authority over workloads -- which is the whole point of this layer.
+  log "installing argo cd CRDs (cluster-scoped, admin)"
+  local crd
+  for crd in application-crd appproject-crd applicationset-crd; do
+    kubectl apply --server-side -f "${base}/crds/${crd}.yaml" >/dev/null
+  done
+  kubectl wait --for=condition=Established --timeout=60s \
+    crd/applications.argoproj.io crd/appprojects.argoproj.io >/dev/null
+
+  log "installing argo cd ${ver} (namespace-scoped: creates no ClusterRoles)"
+  kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl -n argocd apply -f "${base}/namespace-install.yaml" >/dev/null
+
+  kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=5m >/dev/null
   kubectl -n argocd rollout status deploy/argocd-repo-server --timeout=5m >/dev/null
-  kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=5m >/dev/null 2>&1 \
-    || kubectl -n argocd rollout status deploy/argocd-application-controller --timeout=5m >/dev/null
+  kubectl -n argocd rollout status deploy/argocd-server      --timeout=5m >/dev/null
   ok "argo cd ready"
 }
 
@@ -46,6 +55,41 @@ gitops_scope() {
   kubectl create namespace "${GITOPS_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   kubectl apply -f apps/gitops/project.yaml >/dev/null
   ok "namespace ${GITOPS_NAMESPACE}, scoped Role, and AppProject applied"
+}
+
+# Argo's controller caches live state so it can compute drift, and by default it
+# tries to list EVERY api kind in EVERY namespace. Against a namespace-scoped
+# grant that fails on the first kind it is not allowed to read (podtemplates,
+# as it happens) and the app never leaves Unknown.
+#
+# The fix is not to widen RBAC. It is to narrow what Argo watches so the cache
+# mirrors the grant exactly:
+#   cluster Secret   -> only the demo-gitops namespace, no cluster-scoped kinds
+#   resource.inclusions -> only the kinds the Role actually permits
+gitops_bound_cache() {
+  kubectl apply -f - <<EOF >/dev/null
+apiVersion: v1
+kind: Secret
+metadata:
+  name: in-cluster
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: cluster
+stringData:
+  name: in-cluster
+  server: https://kubernetes.default.svc
+  namespaces: ${GITOPS_NAMESPACE}
+  clusterResources: "false"
+  config: '{"tlsClientConfig":{"insecure":false}}'
+EOF
+  kubectl -n argocd patch configmap argocd-cm --type merge -p "$(cat <<'EOF'
+{"data":{"resource.inclusions":"- apiGroups: [\"\", \"apps\", \"networking.k8s.io\", \"cert-manager.io\"]\n  kinds: [\"ConfigMap\", \"Service\", \"Pod\", \"Deployment\", \"ReplicaSet\", \"Ingress\", \"Certificate\"]\n  clusters: [\"*\"]\n"}}
+EOF
+)" >/dev/null
+  # The controller reads both at startup.
+  kubectl -n argocd rollout restart statefulset/argocd-application-controller >/dev/null
+  kubectl -n argocd rollout status  statefulset/argocd-application-controller --timeout=4m >/dev/null
+  ok "cache bounded to ${GITOPS_NAMESPACE} and to the kinds the Role permits"
 }
 
 gitops_application() {
@@ -98,6 +142,7 @@ cmd_deploy_gitops() {
 
   gitops_install_argocd
   gitops_scope
+  gitops_bound_cache
   gitops_application
   gitops_show_grant
 

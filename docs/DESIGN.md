@@ -165,6 +165,59 @@ carries the node's identity, so `podSelector: app=traefik` would never match and
 the rule would have to be written against Cilium's host entity instead — which
 works, but is harder to explain and easier to get wrong.
 
+## GitOps as a separate layer
+
+`--deploy-gitops` is optional and deliberately outside `--all`. The core
+requirement -- nginx deployed by a certificate-authenticated user with a
+namespaced Role -- has to stand on its own and keep standing if this layer is
+never installed.
+
+Two namespaces, two delivery mechanisms, one application held constant:
+
+| | `demo` | `demo-gitops` |
+|---|---|---|
+| Deployed by | `deployer-user`, client certificate | Argo, from git |
+| Source of truth | the cluster | the repo |
+| Gate | RBAC at apply time | review at merge time |
+| Weakness | no audit trail | one collapsed identity |
+
+**The identity problem, stated plainly.** Argo pulls, and authenticates as its
+own ServiceAccount. The git author never becomes a Kubernetes identity, so every
+commit executes with identical privilege and RBAC cannot tell them apart. GitOps
+collapses N humans into 1 machine identity at the cluster boundary.
+
+That is the exact mirror of the CSR workflow, which has strong per-human
+identity and no audit trail at all. Neither is complete; the missing piece is
+the same in both.
+
+**Bounding the controller.** Argo's default install grants its controller
+`*` on `*` cluster-wide -- necessary for a tool meant to apply anything
+anywhere, and a direct reintroduction of the admin identity this exercise exists
+to remove. With it, anyone who can merge can commit a ClusterRoleBinding: a repo
+write becomes a cluster takeover.
+
+Three controls, only one of which is a real fence:
+
+- **`namespace-install.yaml`** creates no ClusterRoles at all. Verify with
+  `kubectl get clusterrole | grep argocd` -- zero.
+- **A Role in `demo-gitops`** is the controller's entire reach outside its own
+  namespace: five writable kinds, read-only on pods and events, no secrets.
+  Enforced by the API server, so it holds even if Argo misbehaves. This is the fence.
+- **The AppProject** restricts destinations and resource kinds, with an empty
+  `clusterResourceWhitelist`. Argo enforces this on itself, so it is defence in
+  depth rather than a boundary.
+
+`kubectl auth can-i --as=system:serviceaccount:argocd:argocd-application-controller`
+reports the result from the API server rather than from Argo's own opinion:
+cluster-admin no, ClusterRoleBinding no, secrets no, and nothing at all in `demo`.
+
+**One consequence worth knowing.** Argo's controller caches live state to compute
+drift, and by default lists every API kind in every namespace -- which a
+namespace-scoped grant denies, leaving applications stuck `Unknown`. The fix is
+not to widen RBAC but to narrow what Argo watches, via a cluster Secret limiting
+it to one namespace and `resource.inclusions` limiting it to the kinds the Role
+already permits. Cache and grant then describe the same surface.
+
 ## User access
 
 RBAC onboarding is deliberately not automated into `bootstrap.sh`. It is kept as

@@ -31,6 +31,8 @@ directly. No distribution wrapper, no bootstrap abstraction.
                --destroy    delete the stack and everything in it
 
 ./onboard-user.sh <user> <group> [days]     issue a cert and kubeconfig via the CSR API
+
+./bootstrap.sh --deploy-gitops              optional: Argo CD, scoped to one namespace
 ```
 
 `--cluster` leaves you with a working cluster and platform. Deploying the app is
@@ -53,6 +55,7 @@ locally with an uncommitted `config.env.local`.
 │   ├── cluster-lib.sh        implementations behind each bootstrap.sh flag
 │   ├── platform-lib.sh       cert-manager, issuers, Traefik, RBAC
 │   ├── users-lib.sh          CSR onboarding steps
+│   ├── gitops-lib.sh         optional Argo CD layer
 │   └── node/                 executed on the instances by --cluster
 │       ├── 00-common.sh          swap, modules, sysctl, containerd, k8s
 │       ├── 10-control-plane.sh   kubeadm init
@@ -64,6 +67,8 @@ locally with an uncommitted `config.env.local`.
 │   ├── cert-manager/         selfsigned -> CA issuer chain
 │   ├── traefik/              ingress controller
 │   ├── nginx/                the site, deployed by the CSR user
+│   ├── netpol/               default-deny ingress, Traefik only
+│   ├── gitops/               Argo project, RBAC, and the manifests it syncs
 │   └── probe.yml             hostPort smoke test for the ingress path
 └── docs/
     ├── DESIGN.md             design document

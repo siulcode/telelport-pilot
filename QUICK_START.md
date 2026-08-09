@@ -172,6 +172,41 @@ kubectl delete -f apps/probe.yml
 A bare nginx pod binding `:80` on worker01. Useful for isolating DNS, the
 Elastic IP, and Cilium's portmap chaining from anything Traefik does.
 
+## Optional — the GitOps layer
+
+Separate from everything above, and not included in `--all`:
+
+```bash
+./bootstrap.sh --deploy-gitops
+```
+
+Installs Argo CD namespace-scoped (no ClusterRoles), grants it a Role in
+`demo-gitops` only, and points it at `apps/gitops/manifests` in this repo. It
+prints what the controller can actually do, straight from the API server:
+
+```
+cluster-admin anywhere      : no
+create clusterrolebinding   : no
+read secrets in demo-gitops : no
+read secrets in demo        : no
+deploy in demo-gitops       : yes
+deploy in demo              : no
+```
+
+Add `<INGRESS_EIP>  gitops.demo` to `/etc/hosts`, then:
+
+```bash
+curl --cacert .build/ca.crt https://gitops.demo
+```
+
+Same Traefik, same CA, different delivery. To see git act as the source of
+truth, scale the Deployment by hand and watch it revert within ~10 seconds:
+
+```bash
+kubectl -n demo-gitops scale deploy/gitops-nginx --replicas=5
+kubectl -n demo-gitops get deploy gitops-nginx -w
+```
+
 ## Teardown
 
 ```bash
