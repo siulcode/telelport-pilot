@@ -50,7 +50,7 @@ locally with an uncommitted `config.env.local`.
 ├── onboard-user.sh       issue a user certificate and kubeconfig
 ├── libs/                 sourced or pushed, never run directly
 │   ├── common-lib.sh         logging, preflight, SSH, stack-output helpers
-│   ├── cluster-lib.sh        the --infra/--cluster/--reset/--destroy commands
+│   ├── cluster-lib.sh        implementations behind each bootstrap.sh flag
 │   ├── platform-lib.sh       cert-manager, issuers, Traefik, RBAC
 │   ├── users-lib.sh          CSR onboarding steps
 │   └── node/                 executed on the instances by --cluster
