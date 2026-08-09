@@ -95,12 +95,9 @@ identical across rebuilds.
 
 ## Two certificate systems
 
-Frequently conflated; they are unrelated.
+Frequently conflated; they share no root, no issuer, and no lifecycle.
 
-| | Purpose | Mechanism |
-|---|---|---|
-| **Client certs** | *Who is this user?* | `certificates.k8s.io` CSR API, signed by the cluster CA |
-| **Server certs** | *Is this site trustworthy?* | cert-manager, issuing for the nginx site |
+![Client certificates versus server certificates](img/two-cert-systems.svg)
 
 ## DNS
 
@@ -142,13 +139,10 @@ to defend at a security company.
 
 ## Cluster networking
 
-Three decisions at three layers, easy to conflate:
+Three decisions at three layers. Rejected options are dashed; each was viable,
+and the reason for skipping it is what the demo defends.
 
-| Layer | Question | Choice |
-|---|---|---|
-| Entry point | How does traffic reach the cluster? | Elastic IP on `worker01` |
-| Service dataplane | How does a Service forward packets? | kube-proxy, iptables |
-| HTTP routing | Which hostname goes to which Service? | Traefik reading `Ingress` |
+![Networking decisions and the resulting request path](img/decisions.svg)
 
 **CNI — Cilium.** Flannel has no NetworkPolicy support, which rules it out.
 Between the rest, Cilium ships Hubble: `hubble observe --verdict DROPPED` makes
@@ -156,25 +150,16 @@ a policy denial visible in one command, and the requirements ask that users
 *deploy, access and monitor* the application. Calico's equivalent observability
 was historically the commercial tier.
 
-**kube-proxy in iptables mode.** IPVS silently degrades to iptables if the
-`ip_vs` modules are missing — you would believe you were running IPVS and not
-be. Cilium's `kubeProxyReplacement` is the more modern answer, rejected only
-because it changes how service routing is debugged live: `iptables-save` is
-common ground, `cilium bpf lb list` is not. A demo consideration, not a
-technical one.
-
-**Traefik on `hostPort`, not `hostNetwork`.** Both give a clean `:443`.
-`hostNetwork` costs the pod its identity: a `NetworkPolicy` selecting
-`app=traefik` silently will not match, and Hubble attributes those flows to the
-node rather than to Traefik. `hostPort` keeps Traefik on the pod network so
-policy and observability both behave as written. The cost is one Cilium setting
-— `cni.chainingMode=portmap`, which preserves the iptables decision above.
-
 ## User access
 
-RBAC onboarding is deliberately not automated into `bootstrap.sh`. The CSR
-workflow — generate key, submit a `CertificateSigningRequest`, approve, extract,
-assemble a kubeconfig — is kept as a separate readable script and run live.
-Automating it would hide both the mechanism and the operational toil, and the
-toil is the substance of the "what is wrong with managing access this way"
-discussion.
+RBAC onboarding is deliberately not automated into `bootstrap.sh`. It is kept as
+a separate readable script and run live, because automating it would hide both
+the mechanism and the operational toil — and the toil is the substance of the
+"what is wrong with managing access this way" discussion.
+
+![CSR issuance and per-request authorization](img/csr-flow.svg)
+
+Two Roles, both namespaced, bound to **groups** rather than users: `demo-deployers`
+may manage the app but cannot read Secrets, `demo-viewers` may read and tail logs.
+The group is the certificate's `O` field, so changing someone's access means
+reissuing their certificate.

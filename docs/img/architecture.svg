@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 470" width="900" height="470" role="img" aria-label="Cluster architecture: laptop reaches two Elastic IPs into a single AWS public subnet holding one control plane and two worker nodes">
+  <style>
+    .bg   { fill: #ffffff; }
+    .box  { fill: #ffffff; stroke: #111111; stroke-width: 1.5; }
+    .grp  { fill: #ffffff; stroke: #111111; stroke-width: 1.5; stroke-dasharray: 6 4; }
+    .sub  { fill: #f2f2f2; stroke: #111111; stroke-width: 1; }
+    .ln   { stroke: #111111; stroke-width: 1.5; fill: none; }
+    .lnd  { stroke: #111111; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; }
+    text  { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #111111; }
+    .t    { font-size: 13px; font-weight: 600; }
+    .s    { font-size: 11px; }
+    .xs   { font-size: 10px; fill: #444444; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111111"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="900" height="470"/>
+
+  <!-- laptop -->
+  <rect class="box" x="16" y="196" width="112" height="76" rx="4"/>
+  <text class="t"  x="72" y="224" text-anchor="middle">Your laptop</text>
+  <text class="xs" x="72" y="242" text-anchor="middle">kubectl · curl</text>
+  <text class="xs" x="72" y="257" text-anchor="middle">/etc/hosts</text>
+
+  <!-- elastic IPs -->
+  <rect class="box" x="162" y="120" width="104" height="52" rx="4"/>
+  <text class="s"  x="214" y="141" text-anchor="middle">Elastic IP</text>
+  <text class="xs" x="214" y="158" text-anchor="middle">k8s-api.internal</text>
+
+  <rect class="box" x="162" y="300" width="104" height="52" rx="4"/>
+  <text class="s"  x="214" y="321" text-anchor="middle">Elastic IP</text>
+  <text class="xs" x="214" y="338" text-anchor="middle">nginx.demo</text>
+
+  <path class="ln" d="M128 220 L145 220 L145 146 L162 146" marker-end="url(#a)"/>
+  <path class="ln" d="M128 248 L145 248 L145 326 L162 326" marker-end="url(#a)"/>
+  <text class="xs" x="150" y="112" text-anchor="middle">:6443</text>
+  <text class="xs" x="150" y="372" text-anchor="middle">:443</text>
+
+  <!-- VPC -->
+  <rect class="grp" x="298" y="30" width="586" height="416" rx="6"/>
+  <text class="s" x="312" y="50">VPC  10.0.0.0/16</text>
+
+  <!-- subnet -->
+  <rect class="grp" x="316" y="62" width="552" height="368" rx="5"/>
+  <text class="xs" x="330" y="80">public subnet  10.0.1.0/24  ·  single AZ</text>
+
+  <!-- control plane -->
+  <rect class="box" x="336" y="94" width="514" height="104" rx="4"/>
+  <text class="t"  x="352" y="116">cp01</text>
+  <text class="xs" x="404" y="116">t3.medium · 10.0.1.10 · tainted, no workloads</text>
+  <rect class="sub" x="352" y="128" width="118" height="52" rx="3"/>
+  <text class="s"  x="411" y="149" text-anchor="middle">kube-apiserver</text>
+  <text class="xs" x="411" y="166" text-anchor="middle">:6443</text>
+  <rect class="sub" x="482" y="128" width="104" height="52" rx="3"/>
+  <text class="s"  x="534" y="158" text-anchor="middle">etcd</text>
+  <rect class="sub" x="598" y="128" width="118" height="52" rx="3"/>
+  <text class="s"  x="657" y="149" text-anchor="middle">scheduler</text>
+  <text class="s"  x="657" y="166" text-anchor="middle">controller-mgr</text>
+  <rect class="sub" x="728" y="128" width="106" height="52" rx="3"/>
+  <text class="s"  x="781" y="149" text-anchor="middle">cluster CA</text>
+  <text class="xs" x="781" y="166" text-anchor="middle">signs CSRs</text>
+
+  <path class="ln" d="M266 146 L336 146" marker-end="url(#a)"/>
+
+  <!-- worker01 -->
+  <rect class="box" x="336" y="220" width="248" height="196" rx="4"/>
+  <text class="t"  x="352" y="242">worker01</text>
+  <text class="xs" x="424" y="242">t3.small · 10.0.1.21</text>
+  <rect class="sub" x="352" y="256" width="216" height="58" rx="3"/>
+  <text class="s"  x="460" y="278" text-anchor="middle">Traefik  (DaemonSet)</text>
+  <text class="xs" x="460" y="296" text-anchor="middle">hostPort 80 / 443 · terminates TLS</text>
+  <rect class="sub" x="352" y="336" width="216" height="58" rx="3"/>
+  <text class="s"  x="460" y="358" text-anchor="middle">nginx pod</text>
+  <text class="xs" x="460" y="376" text-anchor="middle">:8080 plain HTTP</text>
+  <path class="ln" d="M460 314 L460 336" marker-end="url(#a)"/>
+
+  <path class="ln" d="M266 326 L302 326 L302 285 L336 285" marker-end="url(#a)"/>
+
+  <!-- worker02 -->
+  <rect class="box" x="602" y="220" width="248" height="196" rx="4"/>
+  <text class="t"  x="618" y="242">worker02</text>
+  <text class="xs" x="690" y="242">t3.small · 10.0.1.22</text>
+  <rect class="sub" x="618" y="336" width="216" height="58" rx="3"/>
+  <text class="s"  x="726" y="358" text-anchor="middle">nginx pod</text>
+  <text class="xs" x="726" y="376" text-anchor="middle">:8080 plain HTTP</text>
+  <path class="lnd" d="M568 285 L726 285 L726 336" marker-end="url(#a)"/>
+  <text class="xs" x="700" y="277" text-anchor="middle">ClusterIP</text>
+</svg>

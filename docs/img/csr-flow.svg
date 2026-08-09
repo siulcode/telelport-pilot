@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" width="900" height="430" role="img" aria-label="CSR onboarding: six one-time issuance steps, then the authentication and authorization sequence repeated on every request">
+  <style>
+    .bg  { fill: #ffffff; }
+    .box { fill: #ffffff; stroke: #111111; stroke-width: 1.5; }
+    .hd  { fill: #f2f2f2; stroke: #111111; stroke-width: 1.5; }
+    .ok  { fill: #ffffff; stroke: #111111; stroke-width: 2.5; }
+    .ln  { stroke: #111111; stroke-width: 1.5; fill: none; }
+    .lnd { stroke: #111111; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; }
+    text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #111111; }
+    .h   { font-size: 13px; font-weight: 700; }
+    .n   { font-size: 11px; font-weight: 700; }
+    .t   { font-size: 11px; font-weight: 600; }
+    .xs  { font-size: 9.5px; fill: #444444; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111111"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="900" height="430"/>
+
+  <!-- ===== issuance ===== -->
+  <rect class="hd" x="16" y="16" width="868" height="30" rx="4"/>
+  <text class="h"  x="30" y="36">Issuance — once per user, entirely manual</text>
+  <text class="xs" x="868" y="36" text-anchor="end">libs/onboard-user.sh</text>
+
+  <g>
+    <rect class="box" x="16" y="62" width="132" height="66" rx="4"/>
+    <text class="n"  x="28" y="80">1</text>
+    <text class="t"  x="82" y="96" text-anchor="middle">Private key</text>
+    <text class="xs" x="82" y="112" text-anchor="middle">never leaves</text>
+    <text class="xs" x="82" y="124" text-anchor="middle">your machine</text>
+
+    <rect class="box" x="164" y="62" width="132" height="66" rx="4"/>
+    <text class="n"  x="176" y="80">2</text>
+    <text class="t"  x="230" y="96" text-anchor="middle">CSR</text>
+    <text class="xs" x="230" y="112" text-anchor="middle">CN=user</text>
+    <text class="xs" x="230" y="124" text-anchor="middle">O=group</text>
+
+    <rect class="box" x="312" y="62" width="132" height="66" rx="4"/>
+    <text class="n"  x="324" y="80">3</text>
+    <text class="t"  x="378" y="96" text-anchor="middle">Submit</text>
+    <text class="xs" x="378" y="112" text-anchor="middle">certificates.k8s.io</text>
+    <text class="xs" x="378" y="124" text-anchor="middle">object, auditable</text>
+
+    <rect class="box" x="460" y="62" width="132" height="66" rx="4"/>
+    <text class="n"  x="472" y="80">4</text>
+    <text class="t"  x="526" y="96" text-anchor="middle">Approve</text>
+    <text class="xs" x="526" y="112" text-anchor="middle">human gate —</text>
+    <text class="xs" x="526" y="124" text-anchor="middle">the only one</text>
+
+    <rect class="box" x="608" y="62" width="132" height="66" rx="4"/>
+    <text class="n"  x="620" y="80">5</text>
+    <text class="t"  x="674" y="96" text-anchor="middle">Cluster CA signs</text>
+    <text class="xs" x="674" y="112" text-anchor="middle">controller-manager</text>
+    <text class="xs" x="674" y="124" text-anchor="middle">issuer=CN=kubernetes</text>
+
+    <rect class="box" x="756" y="62" width="128" height="66" rx="4"/>
+    <text class="n"  x="768" y="80">6</text>
+    <text class="t"  x="820" y="96" text-anchor="middle">kubeconfig</text>
+    <text class="xs" x="820" y="112" text-anchor="middle">CA + cert + key</text>
+    <text class="xs" x="820" y="124" text-anchor="middle">ns: demo</text>
+
+    <path class="ln" d="M148 95 L164 95" marker-end="url(#a)"/>
+    <path class="ln" d="M296 95 L312 95" marker-end="url(#a)"/>
+    <path class="ln" d="M444 95 L460 95" marker-end="url(#a)"/>
+    <path class="ln" d="M592 95 L608 95" marker-end="url(#a)"/>
+    <path class="ln" d="M740 95 L756 95" marker-end="url(#a)"/>
+  </g>
+
+  <!-- ===== per request ===== -->
+  <rect class="hd" x="16" y="166" width="868" height="30" rx="4"/>
+  <text class="h" x="30" y="186">Every request thereafter</text>
+
+  <rect class="box" x="16" y="212" width="176" height="72" rx="4"/>
+  <text class="t"  x="104" y="240" text-anchor="middle">TLS handshake</text>
+  <text class="xs" x="104" y="258" text-anchor="middle">client cert presented,</text>
+  <text class="xs" x="104" y="271" text-anchor="middle">chain checked to cluster CA</text>
+
+  <rect class="box" x="228" y="212" width="176" height="72" rx="4"/>
+  <text class="t"  x="316" y="234" text-anchor="middle">Authentication</text>
+  <text class="xs" x="316" y="252" text-anchor="middle">CN &#8594; user</text>
+  <text class="xs" x="316" y="266" text-anchor="middle">O &#8594; group · no lookup</text>
+
+  <rect class="box" x="440" y="212" width="200" height="72" rx="4"/>
+  <text class="t"  x="540" y="234" text-anchor="middle">Authorization (RBAC)</text>
+  <text class="xs" x="540" y="252" text-anchor="middle">RoleBinding matches group</text>
+  <text class="xs" x="540" y="266" text-anchor="middle">&#8594; Role &#8594; verb on resource</text>
+
+  <rect class="ok" x="676" y="212" width="98" height="34" rx="4"/>
+  <text class="t"  x="725" y="234" text-anchor="middle">allow</text>
+  <rect class="ok" x="676" y="250" width="98" height="34" rx="4"/>
+  <text class="t"  x="725" y="272" text-anchor="middle">403 Forbidden</text>
+
+  <path class="ln" d="M192 248 L228 248" marker-end="url(#a)"/>
+  <path class="ln" d="M404 248 L440 248" marker-end="url(#a)"/>
+  <path class="ln" d="M640 240 L658 240 L658 229 L676 229" marker-end="url(#a)"/>
+  <path class="ln" d="M640 256 L658 256 L658 267 L676 267" marker-end="url(#a)"/>
+
+  <!-- ===== caveats ===== -->
+  <rect class="box" x="16" y="308" width="868" height="106" rx="4" stroke-dasharray="6 4"/>
+  <text class="h"  x="30" y="330">What this design cannot do</text>
+  <text class="xs" x="30" y="352">·  No revocation. The API server supports no CRL and no OCSP — an issued certificate is valid until it expires.</text>
+  <text class="xs" x="30" y="370">·  Offboarding means rotating the cluster CA, which invalidates every other user at the same time.</text>
+  <text class="xs" x="30" y="388">·  Group membership is fixed in the certificate at issue time; changing access means running all six steps again.</text>
+  <text class="xs" x="30" y="406">·  No user object exists. There is nothing to list, audit, or delete — only the certificate you handed out.</text>
+</svg>

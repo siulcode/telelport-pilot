@@ -10,6 +10,8 @@ directly. No distribution wrapper, no bootstrap abstraction.
 
 ## What you get
 
+![Cluster architecture](docs/img/architecture.svg)
+
 | | |
 |---|---|
 | Cluster | kubeadm v1.36.3 — 1 control plane, 2 workers |
@@ -56,7 +58,9 @@ locally with an uncommitted `config.env.local`.
 │   ├── traefik/              ingress controller
 │   ├── nginx/                the site, deployed by the CSR user
 │   └── probe.yml             hostPort smoke test for the ingress path
-└── docs/DESIGN.md        design document
+└── docs/
+    ├── DESIGN.md             design document
+    └── img/                  diagrams (SVG)
 ```
 
 ## How it is built
@@ -70,9 +74,8 @@ Two phases, deliberately different:
 | Teardown | `delete-stack` | `kubeadm reset` |
 | State | Stack Outputs | files kubeadm owns |
 
-Declarative where the platform provides reconciliation, imperative where it does
-not — CloudFormation cannot know whether `kubeadm init` succeeded. Reasoning in
-[docs/DESIGN.md](docs/DESIGN.md).
+Declarative where the platform reconciles, imperative where it cannot —
+CloudFormation has no way to know whether `kubeadm init` succeeded.
 
 ## On tooling
 

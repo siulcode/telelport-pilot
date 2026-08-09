@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" width="900" height="430" role="img" aria-label="Two unrelated certificate systems: client certificates from the CSR API answer who the user is, server certificates from cert-manager answer whether the site is trustworthy">
+  <style>
+    .bg  { fill: #ffffff; }
+    .box { fill: #ffffff; stroke: #111111; stroke-width: 1.5; }
+    .hd  { fill: #f2f2f2; stroke: #111111; stroke-width: 1.5; }
+    .ln  { stroke: #111111; stroke-width: 1.5; fill: none; }
+    .div { stroke: #111111; stroke-width: 1; stroke-dasharray: 5 4; }
+    text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #111111; }
+    .h   { font-size: 14px; font-weight: 700; }
+    .q   { font-size: 11px; font-style: italic; fill: #444444; }
+    .t   { font-size: 12px; font-weight: 600; }
+    .xs  { font-size: 10px; fill: #444444; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111111"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="900" height="430"/>
+
+  <!-- headers -->
+  <rect class="hd" x="16" y="16" width="420" height="46" rx="4"/>
+  <text class="h" x="226" y="38" text-anchor="middle">Client certificates</text>
+  <text class="q" x="226" y="54" text-anchor="middle">Who is this user?   ·   certificates.k8s.io CSR API</text>
+
+  <rect class="hd" x="464" y="16" width="420" height="46" rx="4"/>
+  <text class="h" x="674" y="38" text-anchor="middle">Server certificates</text>
+  <text class="q" x="674" y="54" text-anchor="middle">Is this site trustworthy?   ·   cert-manager</text>
+
+  <line class="div" x1="450" y1="16" x2="450" y2="414"/>
+
+  <!-- LEFT chain -->
+  <rect class="box" x="86" y="82" width="280" height="46" rx="4"/>
+  <text class="t"  x="226" y="102" text-anchor="middle">Cluster CA</text>
+  <text class="xs" x="226" y="118" text-anchor="middle">/etc/kubernetes/pki/ca.crt · made by kubeadm</text>
+  <path class="ln" d="M226 128 L226 152" marker-end="url(#a)"/>
+
+  <rect class="box" x="86" y="152" width="280" height="46" rx="4"/>
+  <text class="t"  x="226" y="172" text-anchor="middle">CertificateSigningRequest</text>
+  <text class="xs" x="226" y="188" text-anchor="middle">submitted, then approved by a human</text>
+  <path class="ln" d="M226 198 L226 222" marker-end="url(#a)"/>
+
+  <rect class="box" x="86" y="222" width="280" height="46" rx="4"/>
+  <text class="t"  x="226" y="242" text-anchor="middle">Client certificate</text>
+  <text class="xs" x="226" y="258" text-anchor="middle">CN=app-deploy   O=demo-deployers</text>
+  <path class="ln" d="M226 268 L226 292" marker-end="url(#a)"/>
+
+  <rect class="box" x="86" y="292" width="280" height="46" rx="4"/>
+  <text class="t"  x="226" y="312" text-anchor="middle">kubectl presents it</text>
+  <text class="xs" x="226" y="328" text-anchor="middle">TLS client auth on every request</text>
+  <path class="ln" d="M226 338 L226 362" marker-end="url(#a)"/>
+
+  <rect class="box" x="86" y="362" width="280" height="46" rx="4"/>
+  <text class="t"  x="226" y="382" text-anchor="middle">API server: authN, then RBAC</text>
+  <text class="xs" x="226" y="398" text-anchor="middle">CN &#8594; user, O &#8594; group</text>
+
+  <!-- RIGHT chain -->
+  <rect class="box" x="534" y="82" width="280" height="46" rx="4"/>
+  <text class="t"  x="674" y="102" text-anchor="middle">SelfSigned ClusterIssuer</text>
+  <text class="xs" x="674" y="118" text-anchor="middle">can only sign for itself</text>
+  <path class="ln" d="M674 128 L674 152" marker-end="url(#a)"/>
+
+  <rect class="box" x="534" y="152" width="280" height="46" rx="4"/>
+  <text class="t"  x="674" y="172" text-anchor="middle">CA certificate  demo-ca</text>
+  <text class="xs" x="674" y="188" text-anchor="middle">isCA: true · Secret in cert-manager ns</text>
+  <path class="ln" d="M674 198 L674 222" marker-end="url(#a)"/>
+
+  <rect class="box" x="534" y="222" width="280" height="46" rx="4"/>
+  <text class="t"  x="674" y="242" text-anchor="middle">CA ClusterIssuer</text>
+  <text class="xs" x="674" y="258" text-anchor="middle">signs leaves for the cluster</text>
+  <path class="ln" d="M674 268 L674 292" marker-end="url(#a)"/>
+
+  <rect class="box" x="534" y="292" width="280" height="46" rx="4"/>
+  <text class="t"  x="674" y="312" text-anchor="middle">Leaf certificate  nginx.demo</text>
+  <text class="xs" x="674" y="328" text-anchor="middle">Secret nginx-tls · requested by the demo user</text>
+  <path class="ln" d="M674 338 L674 362" marker-end="url(#a)"/>
+
+  <rect class="box" x="534" y="362" width="280" height="46" rx="4"/>
+  <text class="t"  x="674" y="382" text-anchor="middle">Traefik serves it</text>
+  <text class="xs" x="674" y="398" text-anchor="middle">curl --cacert .build/ca.crt</text>
+</svg>

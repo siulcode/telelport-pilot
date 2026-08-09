@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 500" width="900" height="500" role="img" aria-label="Three networking decisions at three layers: entry point, service dataplane, and ingress exposure, each showing rejected alternatives and the chosen option">
+  <style>
+    .bg  { fill: #ffffff; }
+    .q   { fill: #f2f2f2; stroke: #111111; stroke-width: 1.5; }
+    .no  { fill: #ffffff; stroke: #888888; stroke-width: 1.2; stroke-dasharray: 5 4; }
+    .yes { fill: #ffffff; stroke: #111111; stroke-width: 2.5; }
+    .ln  { stroke: #111111; stroke-width: 1.5; fill: none; }
+    .lnn { stroke: #888888; stroke-width: 1.2; fill: none; stroke-dasharray: 4 3; }
+    text { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; fill: #111111; }
+    .h   { font-size: 12.5px; font-weight: 700; }
+    .t   { font-size: 11.5px; font-weight: 600; }
+    .tn  { font-size: 11.5px; font-weight: 600; fill: #777777; }
+    .xs  { font-size: 9.5px; fill: #444444; }
+    .xsn { font-size: 9.5px; fill: #888888; }
+    .lbl { font-size: 9.5px; font-weight: 700; fill: #111111; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#111111"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#888888"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="900" height="500"/>
+
+  <!-- ============ layer 1 ============ -->
+  <rect class="q" x="16" y="20" width="212" height="58" rx="4"/>
+  <text class="h"  x="30" y="42">1 · Entry point</text>
+  <text class="xs" x="30" y="60">How does traffic reach</text>
+  <text class="xs" x="30" y="72">the cluster at all?</text>
+
+  <rect class="no" x="286" y="14" width="266" height="32" rx="4"/>
+  <text class="tn" x="298" y="34">Service type: LoadBalancer</text>
+  <rect class="yes" x="286" y="56" width="266" height="32" rx="4"/>
+  <text class="t"  x="298" y="76">Elastic IP on worker01</text>
+
+  <path class="lnn" d="M228 40 L262 40 L262 30 L286 30" marker-end="url(#g)"/>
+  <path class="ln"  d="M228 52 L262 52 L262 72 L286 72" marker-end="url(#a)"/>
+
+  <text class="xsn" x="566" y="26">no cloud-controller-manager, so it stays Pending forever;</text>
+  <text class="xsn" x="566" y="38">cloud-provider-aws costs ~$16/mo + a node-wide ELB grant</text>
+  <text class="xs"  x="566" y="72">same stable address, no controller, no IAM</text>
+
+  <line x1="16" y1="106" x2="884" y2="106" stroke="#dddddd" stroke-width="1"/>
+
+  <!-- ============ layer 2 ============ -->
+  <rect class="q" x="16" y="126" width="212" height="58" rx="4"/>
+  <text class="h"  x="30" y="148">2 · Service dataplane</text>
+  <text class="xs" x="30" y="166">How does a Service</text>
+  <text class="xs" x="30" y="178">forward packets?</text>
+
+  <rect class="no" x="286" y="114" width="266" height="32" rx="4"/>
+  <text class="tn" x="298" y="134">kube-proxy IPVS</text>
+  <rect class="no" x="286" y="152" width="266" height="32" rx="4"/>
+  <text class="tn" x="298" y="172">Cilium kubeProxyReplacement</text>
+  <rect class="yes" x="286" y="190" width="266" height="32" rx="4"/>
+  <text class="t"  x="298" y="210">kube-proxy iptables</text>
+
+  <path class="lnn" d="M228 146 L262 146 L262 130 L286 130" marker-end="url(#g)"/>
+  <path class="lnn" d="M228 155 L262 155 L262 168 L286 168" marker-end="url(#g)"/>
+  <path class="ln"  d="M228 164 L262 164 L262 206 L286 206" marker-end="url(#a)"/>
+
+  <text class="xsn" x="566" y="134">degrades silently to iptables without the ip_vs modules</text>
+  <text class="xsn" x="566" y="172">faster, but replaces the whole troubleshooting story</text>
+  <text class="xs"  x="566" y="210">iptables-save is common ground with any reviewer</text>
+
+  <line x1="16" y1="240" x2="884" y2="240" stroke="#dddddd" stroke-width="1"/>
+
+  <!-- ============ layer 3 ============ -->
+  <rect class="q" x="16" y="260" width="212" height="58" rx="4"/>
+  <text class="h"  x="30" y="282">3 · Ingress exposure</text>
+  <text class="xs" x="30" y="300">How does Traefik bind</text>
+  <text class="xs" x="30" y="312">port 443 on the node?</text>
+
+  <rect class="no" x="286" y="254" width="266" height="32" rx="4"/>
+  <text class="tn" x="298" y="274">hostNetwork: true</text>
+  <rect class="yes" x="286" y="296" width="266" height="32" rx="4"/>
+  <text class="t"  x="298" y="316">hostPort 80 / 443</text>
+
+  <path class="lnn" d="M228 280 L262 280 L262 270 L286 270" marker-end="url(#g)"/>
+  <path class="ln"  d="M228 292 L262 292 L262 312 L286 312" marker-end="url(#a)"/>
+
+  <text class="xsn" x="566" y="266">pod loses its identity: NetworkPolicy on app=traefik will</text>
+  <text class="xsn" x="566" y="278">not match, and Hubble attributes flows to the node</text>
+  <text class="xs"  x="566" y="310">keeps pod identity for policy and observability;</text>
+  <text class="xs"  x="566" y="322">costs one Cilium setting, cni.chainingMode=portmap</text>
+
+  <line x1="16" y1="346" x2="884" y2="346" stroke="#dddddd" stroke-width="1"/>
+
+  <!-- ============ resulting path ============ -->
+  <text class="h" x="16" y="374">Resulting request path</text>
+
+  <rect class="yes" x="16" y="388" width="126" height="40" rx="4"/>
+  <text class="t"  x="79" y="406" text-anchor="middle">nginx.demo</text>
+  <text class="xs" x="79" y="420" text-anchor="middle">laptop /etc/hosts</text>
+
+  <rect class="yes" x="176" y="388" width="126" height="40" rx="4"/>
+  <text class="t"  x="239" y="406" text-anchor="middle">Elastic IP</text>
+  <text class="xs" x="239" y="420" text-anchor="middle">worker01</text>
+
+  <rect class="yes" x="336" y="388" width="150" height="40" rx="4"/>
+  <text class="t"  x="411" y="406" text-anchor="middle">Traefik :443</text>
+  <text class="xs" x="411" y="420" text-anchor="middle">terminates TLS</text>
+
+  <rect class="yes" x="520" y="388" width="150" height="40" rx="4"/>
+  <text class="t"  x="595" y="406" text-anchor="middle">Service ClusterIP</text>
+  <text class="xs" x="595" y="420" text-anchor="middle">kube-proxy iptables</text>
+
+  <rect class="yes" x="704" y="388" width="180" height="40" rx="4"/>
+  <text class="t"  x="794" y="406" text-anchor="middle">nginx pod :8080</text>
+  <text class="xs" x="794" y="420" text-anchor="middle">plain HTTP</text>
+
+  <path class="ln" d="M142 408 L176 408" marker-end="url(#a)"/>
+  <path class="ln" d="M302 408 L336 408" marker-end="url(#a)"/>
+  <path class="ln" d="M486 408 L520 408" marker-end="url(#a)"/>
+  <path class="ln" d="M670 408 L704 408" marker-end="url(#a)"/>
+
+  <text class="xs" x="16" y="456">HTTP on :80 is answered with a 308 redirect to HTTPS, so the plaintext entry point exists only to send you away from it.</text>
+  <text class="xs" x="16" y="474">Rejected options are dashed. Each was viable; the reason for skipping it is what the demo defends.</text>
+</svg>
