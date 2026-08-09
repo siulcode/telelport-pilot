@@ -3,7 +3,7 @@
 # chain, and Traefik. All admin-owned cluster infrastructure -- the restricted
 # user deploys only the application itself.
 #
-#   ./scripts/install-platform.sh
+#   ./libs/install-platform.sh
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "${REPO_ROOT}"

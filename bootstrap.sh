@@ -13,8 +13,8 @@ source "${REPO_ROOT}/config.env"
 # Local overrides, uncommitted. Sourced second so it wins.
 # shellcheck source=/dev/null
 [[ -f "${REPO_ROOT}/config.env.local" ]] && source "${REPO_ROOT}/config.env.local"
-# shellcheck source=scripts/lib.sh
-source "${REPO_ROOT}/scripts/lib.sh"
+# shellcheck source=libs/lib-bootstrap.sh
+source "${REPO_ROOT}/libs/lib-bootstrap.sh"
 
 # Make repo-relative paths absolute so anything printed here survives a cd --
 # an exported relative KUBECONFIG breaks as soon as you change directory.

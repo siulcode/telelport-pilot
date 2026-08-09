@@ -39,7 +39,11 @@ locally with an uncommitted `config.env.local`.
 ├── bootstrap.sh          dispatcher
 ├── config.env            single source of truth
 ├── infra/infra.yaml      CloudFormation: VPC, SG, IAM, key pair, EIPs, instances
-├── scripts/lib.sh        logging, preflight, SSH, stack-output helpers
+├── libs/
+│   ├── lib-bootstrap.sh      logging, preflight, SSH, stack-output helpers
+│   ├── lib-users.sh          CSR onboarding steps
+│   ├── onboard-user.sh       issue a user certificate and kubeconfig
+│   └── install-platform.sh   cert-manager, issuers, Traefik
 ├── node/                 scripts executed on the instances
 │   ├── 00-common.sh      swap, modules, sysctl, containerd, k8s packages
 │   ├── 10-control-plane.sh   kubeadm init
@@ -47,6 +51,10 @@ locally with an uncommitted `config.env.local`.
 │   ├── 30-cni.sh             Cilium + Hubble
 │   └── 90-reset.sh           tear the cluster down, keep the machines
 ├── apps/                 manifests applied to the cluster
+│   ├── rbac/                 namespace, roles, group bindings
+│   ├── cert-manager/         selfsigned -> CA issuer chain
+│   ├── traefik/              ingress controller
+│   ├── nginx/                the site, deployed by the CSR user
 │   └── probe.yml             hostPort smoke test for the ingress path
 └── docs/DESIGN.md        design document
 ```
