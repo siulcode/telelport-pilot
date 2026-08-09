@@ -62,7 +62,8 @@ platform_ca_bundle() {
 platform_install() {
   step "Platform (cert-manager, issuers, Traefik, RBAC)"
   require_cmd kubectl
-  export KUBECONFIG="${KUBECONFIG_LOCAL}"
+  # The EIP-based copy, so this works before /etc/hosts is set up.
+  export KUBECONFIG="${KUBECONFIG_DIRECT}"
   platform_cert_manager
   platform_issuers
   platform_traefik

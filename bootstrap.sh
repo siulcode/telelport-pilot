@@ -20,7 +20,7 @@ source "${REPO_ROOT}/libs/lib-platform.sh"
 
 # Make repo-relative paths absolute so anything printed here survives a cd --
 # an exported relative KUBECONFIG breaks as soon as you change directory.
-for _p in SSH_KEY_DIR SSH_KEY_PATH KUBECONFIG_LOCAL BUILD_DIR LOG_DIR; do
+for _p in SSH_KEY_DIR SSH_KEY_PATH KUBECONFIG_LOCAL KUBECONFIG_DIRECT BUILD_DIR LOG_DIR; do
   [[ "${!_p}" == /* ]] || printf -v "${_p}" '%s/%s' "${REPO_ROOT}" "${!_p#./}"
 done
 unset _p
@@ -181,16 +181,24 @@ cmd_cluster() {
   cmd_status
 }
 
-# admin.conf references the private IP, unreachable from a laptop; repoint it at
-# the split-horizon hostname.
+# admin.conf references the private IP, unreachable from a laptop. Two copies are
+# written from it:
+#   KUBECONFIG_LOCAL  points at the split-horizon hostname -- for you, and needs
+#                     the /etc/hosts entry --status prints
+#   KUBECONFIG_DIRECT points at the Elastic IP -- for the rest of this script, so
+#                     --all works on a machine whose /etc/hosts is not set up yet
+# Both are valid: the hostname and the EIP are in certSANs.
 fetch_kubeconfig() {
-  local cp="$1"
-  mkdir -p "$(dirname "${KUBECONFIG_LOCAL}")"
+  local cp="$1" raw
+  raw="$(ssh_node "${cp}" "sudo cat /etc/kubernetes/admin.conf")"
+  [[ -n "${raw}" ]] || die "failed to retrieve admin.conf"
+
+  mkdir -p "$(dirname "${KUBECONFIG_LOCAL}")" "${BUILD_DIR}"
   ( umask 077
-    ssh_node "${cp}" "sudo cat /etc/kubernetes/admin.conf" \
-      | sed "s|server: https://.*|server: https://${CP_ENDPOINT}:6443|" \
-      > "${KUBECONFIG_LOCAL}" )
-  [[ -s "${KUBECONFIG_LOCAL}" ]] || die "failed to retrieve admin.conf"
+    sed "s|server: https://.*|server: https://${CP_ENDPOINT}:6443|" <<<"${raw}" \
+      > "${KUBECONFIG_LOCAL}"
+    sed "s|server: https://.*|server: https://${cp}:6443|" <<<"${raw}" \
+      > "${KUBECONFIG_DIRECT}" )
   ok "kubeconfig written: ${KUBECONFIG_LOCAL}"
 }
 

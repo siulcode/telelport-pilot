@@ -42,7 +42,7 @@
 
   <rect class="box" x="86" y="222" width="280" height="46" rx="4"/>
   <text class="t"  x="226" y="242" text-anchor="middle">Client certificate</text>
-  <text class="xs" x="226" y="258" text-anchor="middle">CN=app-deploy   O=demo-deployers</text>
+  <text class="xs" x="226" y="258" text-anchor="middle">CN=deployer-user   O=demo-deployers</text>
   <path class="ln" d="M226 268 L226 292" marker-end="url(#a)"/>
 
   <rect class="box" x="86" y="292" width="280" height="46" rx="4"/>

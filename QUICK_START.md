@@ -24,14 +24,25 @@ API server, and NodePorts.
 
 ## 2. Add two hosts entries
 
-Step 1 prints these with the real IPs. Copy them verbatim:
+Step 1 prints these with the real IPs. The first makes the API certificate
+match; the second points the site hostname at the ingress.
+
+**On a rebuild the Elastic IPs change**, so remove any previous entries first —
+appending would leave the stale line ahead of the new one, and the first match
+in `/etc/hosts` wins:
+
+```bash
+sudo sh -c 'grep -vE "k8s-api\.internal|nginx\.demo" /etc/hosts > /tmp/h && cat /tmp/h > /etc/hosts'
+```
+
+Then add the current pair:
 
 ```bash
 sudo sh -c 'printf "%s\n" "<CP_EIP>  k8s-api.internal" "<INGRESS_EIP>  nginx.demo" >> /etc/hosts'
 ```
 
-The first makes the API certificate match; the second points the site hostname
-at the ingress.
+`./bootstrap.sh --status` reprints both lines at any time. Nothing in
+`--infra` or `--cluster` depends on this — it is for your `kubectl` and `curl`.
 
 ## 3. Cluster and platform — ~15 min
 
@@ -58,23 +69,23 @@ Nothing is deployed by admin from here on. Issue a client certificate through
 the `certificates.k8s.io` API and get a kubeconfig back:
 
 ```bash
-./onboard-user.sh app-deploy demo-deployers 30
+./onboard-user.sh deployer-user demo-deployers 30
 ```
 
 Seven steps, printed as it goes: private key → CSR → submit → approve → the
-cluster CA signs → kubeconfig → verify. Lands in `users/app-deploy/`.
+cluster CA signs → kubeconfig → verify. Lands in `users/deployer-user/`.
 
 For a read-only persona:
 
 ```bash
-./onboard-user.sh app-view demo-viewers 30
+./onboard-user.sh viewer-user demo-viewers 30
 ```
 
 ## 5. Deploy the site as that user
 
 ```bash
-kubectl --kubeconfig=users/app-deploy/kubeconfig apply -f apps/nginx/nginx.yaml
-kubectl --kubeconfig=users/app-deploy/kubeconfig -n demo rollout status deploy/nginx
+kubectl --kubeconfig=users/deployer-user/kubeconfig apply -f apps/nginx/nginx.yaml
+kubectl --kubeconfig=users/deployer-user/kubeconfig -n demo rollout status deploy/nginx
 ```
 
 ConfigMap, Deployment, Service, `Certificate`, and `Ingress` — all created by a
@@ -92,7 +103,7 @@ own CA. Three things worth checking while you are here:
 ```bash
 curl -sI http://nginx.demo | head -2        # 308 redirect to HTTPS
 curl -s https://nginx.demo                  # fails: CA is not in the system store
-kubectl --kubeconfig=users/app-view/kubeconfig -n demo \
+kubectl --kubeconfig=users/viewer-user/kubeconfig -n demo \
   scale deploy/nginx --replicas=5           # 403: viewers cannot deploy
 ```
 
@@ -100,7 +111,7 @@ The deployer cannot read the TLS key either — cert-manager created the Secret,
 Traefik consumes it, and nobody who deploys the app can see it:
 
 ```bash
-kubectl --kubeconfig=users/app-deploy/kubeconfig -n demo get secret nginx-tls
+kubectl --kubeconfig=users/deployer-user/kubeconfig -n demo get secret nginx-tls
 ```
 
 ---

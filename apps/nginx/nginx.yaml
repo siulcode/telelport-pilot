@@ -28,7 +28,7 @@ data:
         <h1>It works.</h1>
         <p>Served by nginx on a three-node <code>kubeadm</code> cluster.</p>
         <p>
-          Deployed by <code>app-deploy</code>, a user authenticated with a
+          Deployed by <code>deployer-user</code>, a user authenticated with a
           client certificate issued through the Kubernetes CSR API and
           authorised by a namespaced RBAC Role.
         </p>
