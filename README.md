@@ -51,6 +51,7 @@ locally with an uncommitted `config.env.local`.
 ├── infra/infra.yaml      CloudFormation: VPC, SG, IAM, key pair, EIPs, instances
 ├── onboard-user.sh       issue a user certificate and kubeconfig
 ├── libs/                 sourced or pushed, never run directly
+│   ├── boot-lib.sh           loads config and every lib; sourced by the drivers
 │   ├── common-lib.sh         logging, preflight, SSH, stack-output helpers
 │   ├── cluster-lib.sh        implementations behind each bootstrap.sh flag
 │   ├── platform-lib.sh       cert-manager, issuers, Traefik, RBAC

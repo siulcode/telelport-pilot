@@ -4,6 +4,10 @@
 # Each function is one step of the manual workflow, in the order a human would
 # perform it. Kept granular on purpose: the toil is the point, and the demo
 # walks through these one at a time.
+#
+# Deliberately not wired into bootstrap.sh -- this is repeated per user, per
+# access change, and per expiry, and that repetition is the answer to "what is
+# wrong with managing access this way".
 
 u_step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 u_info() { printf '   %s\n' "$*"; }
@@ -133,4 +137,43 @@ user_caveats() {
   of it is a Kubernetes object: there is no user to list, audit, or delete.
 
 EOF
+}
+
+# --- The whole workflow ------------------------------------------------------
+user_usage() {
+  echo "usage: ./onboard-user.sh <username> <group> [valid-days]"
+  echo "       groups: ${APP_NAMESPACE}-deployers | ${APP_NAMESPACE}-viewers"
+}
+
+user_onboard() {
+  local user="$1" group="$2" days="${3:-30}"
+  user_preflight "${APP_NAMESPACE}"
+
+  local dir key csr crt kcfg
+  dir="$(user_workdir "${user}")"
+  key="${dir}/${user}.key"; csr="${dir}/${user}.csr"
+  crt="${dir}/${user}.crt"; kcfg="${dir}/kubeconfig"
+
+  u_step "1. Private key -- never leaves this machine, never sent to the cluster"
+  user_keypair "${key}"
+
+  u_step "2. Certificate signing request -- CN=${user}, O=${group}"
+  user_csr "${key}" "${csr}" "${user}" "${group}"
+
+  u_step "3. Submit to the certificates.k8s.io API"
+  user_submit_csr "${user}" "${csr}" "${days}"
+
+  u_step "4. Approve"
+  user_approve_csr "${user}"
+
+  u_step "5. Extract the signed certificate"
+  user_fetch_cert "${user}" "${crt}"
+
+  u_step "6. Assemble a kubeconfig"
+  user_kubeconfig "${kcfg}" "${crt}" "${key}" "${user}" "${APP_NAMESPACE}" "${PROJECT_NAME}"
+
+  u_step "7. Verify the grant"
+  user_verify "${kcfg}" "${APP_NAMESPACE}"
+
+  user_caveats "${REPO_ROOT}/${kcfg}" "${days}"
 }

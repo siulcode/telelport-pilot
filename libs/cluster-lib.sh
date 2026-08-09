@@ -4,6 +4,27 @@
 
 TEMPLATE="${REPO_ROOT}/infra/infra.yaml"
 
+usage() {
+  cat <<EOF
+Usage: ./bootstrap.sh [FLAG]
+
+  --infra      Deploy VPC, security group, key pair, EIPs, and 3 EC2 instances
+  --cluster    kubeadm + CNI, then cert-manager, Traefik, and the demo namespace
+  --all        Run --infra then --cluster
+  --status     Show what currently exists
+  --reset      kubeadm reset all three nodes, leaving the instances up
+  --destroy    Delete the CloudFormation stack and all resources
+  --help       This message
+
+Optional, and deliberately outside --all:
+
+  --deploy-gitops   Argo CD, scoped to a single namespace. The core RBAC
+                    deployment does not depend on it.
+
+Every flag is safe to re-run. Configuration lives in config.env.
+EOF
+}
+
 # =============================================================================
 # Phase 1
 # =============================================================================
