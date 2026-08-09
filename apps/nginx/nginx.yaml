@@ -1,0 +1,150 @@
+# The static nginx site. Everything here is namespaced and within what the
+# app-deployer Role permits -- this file is applied with the CSR user's
+# kubeconfig, never with admin.conf.
+#
+# Note what is absent: no Secret. The Certificate below asks cert-manager for
+# one, cert-manager creates it, Traefik reads it. The deployer never has access
+# to the private key and does not need it.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-site
+  namespace: demo
+data:
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>teleport-k8s</title>
+        <style>
+          body { font-family: system-ui, sans-serif; max-width: 34rem;
+                 margin: 6rem auto; padding: 0 1.5rem; line-height: 1.6; }
+          code { background: #f4f4f5; padding: .15rem .4rem; border-radius: 3px; }
+        </style>
+      </head>
+      <body>
+        <h1>It works.</h1>
+        <p>Served by nginx on a three-node <code>kubeadm</code> cluster.</p>
+        <p>
+          Deployed by <code>app-deploy</code>, a user authenticated with a
+          client certificate issued through the Kubernetes CSR API and
+          authorised by a namespaced RBAC Role.
+        </p>
+        <p>TLS terminated by Traefik, certificate issued by cert-manager.</p>
+      </body>
+    </html>
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: demo
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: nginx }
+  template:
+    metadata:
+      labels: { app: nginx }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.31-alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - { name: site,  mountPath: /usr/share/nginx/html }
+            - { name: conf,  mountPath: /etc/nginx/conf.d }
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run,   mountPath: /var/run }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { memory: 64Mi }
+      volumes:
+        - name: site
+          configMap: { name: nginx-site }
+        - name: conf
+          configMap: { name: nginx-conf }
+        - { name: cache, emptyDir: {} }
+        - { name: run,   emptyDir: {} }
+---
+# Port 8080, not 80: the container runs as non-root and cannot bind a
+# privileged port. TLS is terminated upstream by Traefik, so plain HTTP here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-conf
+  namespace: demo
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      root /usr/share/nginx/html;
+      index index.html;
+      location /healthz { return 200 "ok\n"; }
+    }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  namespace: demo
+spec:
+  selector: { app: nginx }
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: nginx-tls
+  namespace: demo
+spec:
+  secretName: nginx-tls
+  dnsNames: ["nginx.demo"]
+  duration: 2160h      # 90 days, mirroring public CA practice
+  renewBefore: 360h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: demo-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx
+  namespace: demo
+  annotations:
+    # spec.tls below loads the certificate into Traefik's store, but it does not
+    # mark the ROUTER as TLS-enabled. Without these, Traefik terminates TLS with
+    # the right certificate and then finds no TLS router to handle the request,
+    # answering 404 -- a confusing failure, because the certificate looks fine.
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["nginx.demo"]
+      secretName: nginx-tls
+  rules:
+    - host: nginx.demo
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx
+                port: { number: 80 }
