@@ -150,6 +150,21 @@ a policy denial visible in one command, and the requirements ask that users
 *deploy, access and monitor* the application. Calico's equivalent observability
 was historically the commercial tier.
 
+## Network policy
+
+Default-deny ingress in `demo`, with a single rule admitting Traefik on nginx's
+port. Written as a portable `networking.k8s.io` policy rather than a
+CiliumNetworkPolicy, so it stays meaningful on any NetworkPolicy-capable CNI.
+
+Admin-owned, deliberately: `deployer-user` has no verbs on `networkpolicies`
+and gets a 403 trying to delete it. The same boundary as the TLS Secret — the
+app owner ships the app but cannot widen what contains it.
+
+This is where the `hostPort` decision pays off. A `hostNetwork` Traefik pod
+carries the node's identity, so `podSelector: app=traefik` would never match and
+the rule would have to be written against Cilium's host entity instead — which
+works, but is harder to explain and easier to get wrong.
+
 ## User access
 
 RBAC onboarding is deliberately not automated into `bootstrap.sh`. It is kept as

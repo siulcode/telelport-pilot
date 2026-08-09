@@ -1,0 +1,49 @@
+# Network-layer least privilege for the demo namespace.
+#
+# Admin-owned on purpose. NetworkPolicy is a security boundary, so the app
+# deployer must not be able to widen it -- `deployer-user` has no verbs on
+# networkpolicies and gets a 403 trying to delete these. Same argument as the
+# TLS Secret: you can ship the app, you cannot loosen what contains it.
+#
+# Portable networking.k8s.io policy rather than a CiliumNetworkPolicy. Cilium
+# enforces it and Hubble reports the verdicts either way, and it keeps the
+# manifest meaningful on any NetworkPolicy-capable CNI.
+---
+# Deny all ingress to every pod in the namespace. An empty podSelector matches
+# everything; listing Ingress with no rules means "no source is allowed".
+# Egress is untouched, so DNS to CoreDNS still works.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: demo
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# The single hole: Traefik, and only on the port nginx actually serves.
+#
+# This is the payoff of running Traefik with hostPort instead of hostNetwork.
+# A hostNetwork pod has the node's identity, so this podSelector would never
+# match and the rule would have to be written against the host entity instead.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: nginx-allow-traefik
+  namespace: demo
+spec:
+  podSelector:
+    matchLabels:
+      app: nginx
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: traefik
+          podSelector:
+            matchLabels:
+              app: traefik
+      ports:
+        - protocol: TCP
+          port: 8080

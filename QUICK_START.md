@@ -117,6 +117,34 @@ Traefik consumes it, and nobody who deploys the app can see it:
 kubectl --kubeconfig=users/deployer-user/kubeconfig -n demo get secret nginx-tls
 ```
 
+## 7. Show the network boundary
+
+`--cluster` applied a default-deny ingress policy in `demo`, with one hole for
+Traefik. Prove it from inside the namespace:
+
+```bash
+kubectl -n demo run intruder --rm -i --restart=Never --image=curlimages/curl \
+  -- -s --max-time 5 http://nginx
+```
+
+It times out — a pod sitting in the same namespace cannot reach nginx, only
+Traefik can. Watch the drop as it happens:
+
+```bash
+kubectl -n kube-system port-forward svc/hubble-relay 4245:80 &
+hubble observe --server localhost:4245 --namespace demo --verdict DROPPED --follow
+```
+
+The deployer cannot open that hole either — the policy is admin-owned:
+
+```bash
+kubectl --kubeconfig=users/deployer-user/kubeconfig -n demo \
+  delete networkpolicy default-deny-ingress     # 403
+```
+
+Same least-privilege argument as the TLS Secret, one layer down: you can ship
+the app, you cannot loosen what contains it.
+
 ---
 
 ## Optional — probe the ingress path alone

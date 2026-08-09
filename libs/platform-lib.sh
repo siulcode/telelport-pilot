@@ -59,6 +59,13 @@ platform_ca_bundle() {
   ok "CA certificate: ${BUILD_DIR}/ca.crt"
 }
 
+# --- network policy ----------------------------------------------------------
+# Applied before the app exists; it simply selects nothing until nginx is there.
+platform_netpol() {
+  kubectl apply -f apps/netpol/netpol.yaml >/dev/null
+  ok "network policy: default-deny ingress, Traefik only"
+}
+
 platform_install() {
   step "Platform (cert-manager, issuers, Traefik, RBAC)"
   require_cmd kubectl
@@ -68,5 +75,6 @@ platform_install() {
   platform_issuers
   platform_traefik
   platform_rbac
+  platform_netpol
   platform_ca_bundle
 }
