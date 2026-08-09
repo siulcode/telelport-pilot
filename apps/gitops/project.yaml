@@ -1,0 +1,77 @@
+# Bounding Argo. Two layers, and only one of them is a real security boundary.
+#
+#   AppProject           Argo's own policy. Argo enforces it on itself, so a bug
+#                        or a crafted Application can get around it. Useful, but
+#                        it is defence in depth, not the fence.
+#   Role / RoleBinding   Kubernetes RBAC on the controller's ServiceAccount.
+#                        The API server enforces this regardless of what Argo
+#                        believes. THIS is the fence.
+#
+# Argo is installed from namespace-install.yaml, which creates no ClusterRoles
+# at all -- so out of the box it can only touch its own namespace. The Role
+# below is the entire grant it has anywhere else in the cluster.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: argocd-manager
+  namespace: demo-gitops
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "services"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Read-only on pods so Argo can report health. It cannot create them; the
+  # Deployment controller does that.
+  - apiGroups: [""]
+    resources: ["pods", "events"]
+    verbs: ["get", "list", "watch"]
+  # Deliberately absent: secrets, serviceaccounts, roles, rolebindings,
+  # networkpolicies, and every cluster-scoped kind. A commit cannot grant
+  # itself privileges, read the TLS key, or weaken the network boundary.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: argocd-manager
+  namespace: demo-gitops
+subjects:
+  - kind: ServiceAccount
+    name: argocd-application-controller
+    namespace: argocd
+roleRef:
+  kind: Role
+  name: argocd-manager
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: demo-gitops
+  namespace: argocd
+spec:
+  description: The one namespace Argo may deploy into.
+  sourceRepos:
+    - "*"
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: demo-gitops
+  # No cluster-scoped resource may be created by any Application in this
+  # project. An empty whitelist denies everything -- so no ClusterRoleBinding,
+  # no ValidatingWebhookConfiguration, no PersistentVolume.
+  clusterResourceWhitelist: []
+  # And within the namespace, only these kinds.
+  namespaceResourceWhitelist:
+    - { group: "",                  kind: ConfigMap }
+    - { group: "",                  kind: Service }
+    - { group: "apps",              kind: Deployment }
+    - { group: "networking.k8s.io", kind: Ingress }
+    - { group: "cert-manager.io",   kind: Certificate }

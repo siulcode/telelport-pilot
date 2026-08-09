@@ -14,7 +14,7 @@ source "${REPO_ROOT}/config.env"
 # shellcheck source=/dev/null
 [[ -f "${REPO_ROOT}/config.env.local" ]] && source "${REPO_ROOT}/config.env.local"
 # common must come first: the others use its logging and preflight helpers.
-for _lib in common platform cluster; do
+for _lib in common platform cluster gitops; do
   # shellcheck source=/dev/null
   source "${REPO_ROOT}/libs/${_lib}-lib.sh"
 done
@@ -39,6 +39,11 @@ Usage: ./bootstrap.sh [FLAG]
   --destroy    Delete the CloudFormation stack and all resources
   --help       This message
 
+Optional, and deliberately outside --all:
+
+  --deploy-gitops   Argo CD, scoped to a single namespace. The core RBAC
+                    deployment does not depend on it.
+
 Every flag is safe to re-run. Configuration lives in config.env.
 EOF
 }
@@ -53,6 +58,7 @@ main() {
     --all)     cmd_infra; cmd_cluster ;;
     --status)  cmd_status ;;
     --reset)   cmd_reset ;;
+    --deploy-gitops) cmd_deploy_gitops ;;
     --destroy) cmd_destroy ;;
     --help|-h) usage ;;
     "")        usage; exit 1 ;;

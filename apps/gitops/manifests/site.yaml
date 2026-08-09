@@ -1,0 +1,149 @@
+# The application Argo deploys. Deliberately a mirror of apps/nginx so the two
+# delivery mechanisms can be compared side by side with the app held constant.
+#
+# Nothing here is applied by hand -- `--deploy-gitops` points Argo at this path
+# in git, and Argo reconciles it. Editing this file and pushing is the only
+# supported way to change what runs in the demo-gitops namespace.
+#
+# The Namespace itself is NOT in here: it is created by --deploy-gitops as
+# admin, so Argo never needs permission to create namespaces.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitops-site
+  namespace: demo-gitops
+data:
+  index.html: |
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>teleport-k8s · gitops</title>
+        <style>
+          body { font-family: system-ui, sans-serif; max-width: 34rem;
+                 margin: 6rem auto; padding: 0 1.5rem; line-height: 1.6; }
+          code { background: #f4f4f5; padding: .15rem .4rem; border-radius: 3px; }
+        </style>
+      </head>
+      <body>
+        <h1>Delivered by GitOps.</h1>
+        <p>
+          Nobody deployed this. Argo CD reconciled it from
+          <code>apps/gitops/manifests</code> on <code>main</code>.
+        </p>
+        <p>
+          The identity that applied it is a ServiceAccount scoped to this one
+          namespace — not a human, and not cluster-admin. The gate that decided
+          it should exist was the merge, not an RBAC check.
+        </p>
+        <p>Same Traefik, same cert-manager CA as the RBAC-deployed site.</p>
+      </body>
+    </html>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gitops-conf
+  namespace: demo-gitops
+data:
+  default.conf: |
+    server {
+      listen 8080;
+      root /usr/share/nginx/html;
+      index index.html;
+      location /healthz { return 200 "ok\n"; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gitops-nginx
+  namespace: demo-gitops
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: gitops-nginx }
+  template:
+    metadata:
+      labels: { app: gitops-nginx }
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.31-alpine
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - { name: site,  mountPath: /usr/share/nginx/html }
+            - { name: conf,  mountPath: /etc/nginx/conf.d }
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run,   mountPath: /var/run }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits:   { memory: 64Mi }
+      volumes:
+        - name: site
+          configMap: { name: gitops-site }
+        - name: conf
+          configMap: { name: gitops-conf }
+        - { name: cache, emptyDir: {} }
+        - { name: run,   emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitops-nginx
+  namespace: demo-gitops
+spec:
+  selector: { app: gitops-nginx }
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gitops-tls
+  namespace: demo-gitops
+spec:
+  secretName: gitops-tls
+  dnsNames: ["gitops.demo"]
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: demo-ca
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gitops-nginx
+  namespace: demo-gitops
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["gitops.demo"]
+      secretName: gitops-tls
+  rules:
+    - host: gitops.demo
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gitops-nginx
+                port: { number: 80 }
