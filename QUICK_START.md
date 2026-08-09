@@ -128,12 +128,26 @@ kubectl -n demo run intruder --rm -i --restart=Never --image=curlimages/curl \
 ```
 
 It times out — a pod sitting in the same namespace cannot reach nginx, only
-Traefik can. Watch the drop as it happens:
+Traefik can. Now see the verdict. `--cluster` already installed the `hubble` CLI
+on the control plane, so no local install is needed:
 
 ```bash
-kubectl -n kube-system port-forward svc/hubble-relay 4245:80 &
-hubble observe --server localhost:4245 --namespace demo --verdict DROPPED --follow
+ssh -i .ssh/teleport-k8s.pem ubuntu@<CP_EIP> \
+  'hubble observe --server $(kubectl -n kube-system get svc hubble-relay \
+     -o jsonpath="{.spec.clusterIP}"):80 --namespace demo --verdict DROPPED --last 20'
 ```
+
+```
+demo/intruder:42114 <> demo/nginx-7979b968bd-gdxbn:8080  Policy denied  DROPPED
+```
+
+Named source, named destination, the port, and the verdict. Swap
+`--verdict DROPPED` for `--verdict FORWARDED` and you see Traefik's traffic
+allowed through the one hole the policy leaves open.
+
+If you would rather run it locally, install the Hubble CLI and port-forward
+instead — `kubectl -n kube-system port-forward svc/hubble-relay 4245:80` then
+`hubble observe --server localhost:4245 ...`.
 
 The deployer cannot open that hole either — the policy is admin-owned:
 
