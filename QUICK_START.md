@@ -218,23 +218,6 @@ kubectl -n demo-gitops scale deploy/gitops-nginx --replicas=5
 kubectl -n demo-gitops get deploy gitops-nginx -w
 ```
 
-## Teardown
-
-```bash
-./bootstrap.sh --reset      # cluster only, instances stay up
-./bootstrap.sh --destroy    # everything, including the stack
-```
-
-## If it fails
-
-Per-node logs are in `.build/logs/<ip>.log`, and the last 20 lines print
-automatically. Retry with `--reset` then `--cluster`.
-
-Every flag is safe to re-run; `--all` twice changes nothing.
-
-If SSH starts timing out, your public IP probably changed (VPN on/off) — re-run
-`--infra` to refresh the security group.
-
 ---
 
 ## Optional — see it in a browser
@@ -280,3 +263,22 @@ security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db 
 ```bash
 security delete-certificate -c teleport-k8s-demo-ca ~/Library/Keychains/login.keychain-db
 ```
+
+---
+
+## Teardown
+
+```bash
+./bootstrap.sh --reset      # cluster only, instances stay up
+./bootstrap.sh --destroy    # everything, including the stack
+```
+
+## If it fails
+
+Per-node logs are in `.build/logs/<ip>.log`, and the last 20 lines print
+automatically. Retry with `--reset` then `--cluster`.
+
+Every flag is safe to re-run; `--all` twice changes nothing.
+
+If SSH starts timing out, your public IP probably changed (VPN on/off) — re-run
+`--infra` to refresh the security group.
