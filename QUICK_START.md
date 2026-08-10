@@ -1,6 +1,10 @@
 # Quick start
 
-From nothing to an HTTPS site on a three-node kubeadm cluster, in about 25 minutes.
+From an empty AWS account to an HTTPS site on a three-node kubeadm cluster.
+
+`./bootstrap.sh --all` measured **7m 09s** for steps 1 and 3 together; onboarding
+a user and deploying the app add two or three minutes on top. Most of the wall
+clock is nodes pulling container images, so a slow day runs longer.
 
 ## Prerequisites
 
@@ -15,7 +19,7 @@ Running cost is ~$2.59/day — tear it down when idle.
 
 ---
 
-## 1. Infrastructure — ~4 min
+## 1. Infrastructure — ~3 min
 
 ```bash
 ./bootstrap.sh --infra
@@ -47,7 +51,7 @@ sudo sh -c 'printf "%s\n" "<CP_EIP>  k8s-api.internal" "<INGRESS_EIP>  nginx.dem
 `./bootstrap.sh --status` reprints both lines at any time. Nothing in
 `--infra` or `--cluster` depends on this — it is for your `kubectl` and `curl`.
 
-## 3. Cluster and platform — ~15 min
+## 3. Cluster and platform — ~4 min
 
 ```bash
 ./bootstrap.sh --cluster

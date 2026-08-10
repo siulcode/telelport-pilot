@@ -3,7 +3,7 @@
 A three-node cluster — one control plane, two workers — built with `kubeadm`
 directly. No distribution wrapper, no bootstrap abstraction.
 
-**→ [QUICK_START.md](QUICK_START.md)** — get it running in ~20 minutes
+**→ [QUICK_START.md](QUICK_START.md)** — running cluster in under 10 minutes
 **→ [docs/DESIGN.md](docs/DESIGN.md)** — decisions, tradeoffs, and known limits
 
 ---
