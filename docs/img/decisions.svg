@@ -116,6 +116,6 @@
   <path class="ln" d="M486 408 L520 408" marker-end="url(#a)"/>
   <path class="ln" d="M670 408 L704 408" marker-end="url(#a)"/>
 
-  <text class="xs" x="16" y="456">HTTP on :80 is answered with a 308 redirect to HTTPS, so the plaintext entry point exists only to send you away from it.</text>
+  <text class="xs" x="16" y="456">HTTP on :80 is answered with a permanent redirect to HTTPS, so the plaintext entry point exists only to send you away from it.</text>
   <text class="xs" x="16" y="474">Rejected options are dashed. Each was viable; the reason for skipping it is what the demo defends.</text>
 </svg>

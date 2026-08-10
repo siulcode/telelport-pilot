@@ -104,7 +104,7 @@ The page, over TLS, with a certificate cert-manager issued from the cluster's
 own CA. Three things worth checking while you are here:
 
 ```bash
-curl -sI http://nginx.demo | head -2        # 308 redirect to HTTPS
+curl -sI http://nginx.demo | head -2        # permanent redirect to HTTPS
 curl -s https://nginx.demo                  # fails: CA is not in the system store
 kubectl --kubeconfig=users/viewer-user/kubeconfig -n demo \
   scale deploy/nginx --replicas=5           # 403: viewers cannot deploy
