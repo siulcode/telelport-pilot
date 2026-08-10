@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Install the CNI. cp01 only. Nothing works until this lands: CoreDNS sits
+# File: libs/node/30-cni.sh
+# Desc: Install the CNI (Cilium or Calico) plus Hubble. Nothing works until
+#       this lands: CoreDNS sits
 # Pending and every node stays NotReady.
 set -euo pipefail
 

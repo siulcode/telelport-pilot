@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Sourced first by both drivers. Resolves the repo, loads configuration and
-# every library, and makes repo-relative paths absolute so an exported
-# KUBECONFIG survives a cd.
+# File: libs/boot-lib.sh
+# Desc: Sourced first by both drivers. Resolves the repo, loads configuration
+#       and every library, and makes repo-relative paths absolute so an
+#       exported KUBECONFIG survives a cd.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"

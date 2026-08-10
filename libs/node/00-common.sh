@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Host prep, all three nodes: swap, modules, sysctl, containerd, k8s packages.
+# File: libs/node/00-common.sh
+# Desc: Host prep on all three nodes: swap, modules, sysctl, containerd,
+#       kubelet/kubeadm/kubectl.
 # Idempotent by guard -- every expensive step checks for what it would create.
 set -euo pipefail
 

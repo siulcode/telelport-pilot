@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Shared helpers. Sourced by bootstrap.sh. Not meant to be run directly.
+# File: libs/common-lib.sh
+# Desc: Shared helpers: logging, preflight, SSH, stack outputs, node bundle.
 
 # --- Logging -----------------------------------------------------------------
 _c_reset=$'\033[0m'; _c_blue=$'\033[34m'; _c_green=$'\033[32m'

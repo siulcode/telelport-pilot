@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Return a node to pre-kubeadm state so a clean rebuild can be rehearsed.
+# File: libs/node/90-reset.sh
+# Desc: Return a node to pre-kubeadm state so a clean rebuild can be rehearsed.
 # Leaves containerd and the k8s packages alone -- re-running 00-common.sh after
 # this is a no-op and only the cluster is rebuilt.
 set -euo pipefail

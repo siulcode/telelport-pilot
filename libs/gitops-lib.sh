@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Optional GitOps layer: ./bootstrap.sh --deploy-gitops
+# File: libs/gitops-lib.sh
+# Desc: Optional Argo CD layer (--deploy-gitops), scoped to one namespace.
 #
 # Deliberately NOT part of --cluster or --all. The core requirement -- nginx
 # deployed by a certificate-authenticated user with a namespaced Role -- must

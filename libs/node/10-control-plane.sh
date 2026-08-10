@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# kubeadm init. cp01 only. Idempotent by artifact guard: admin.conf is written
+# File: libs/node/10-control-plane.sh
+# Desc: kubeadm init on cp01. Idempotent by artifact guard: admin.conf is written
 # by kubeadm itself, so its presence is the only honest signal init succeeded.
 set -euo pipefail
 

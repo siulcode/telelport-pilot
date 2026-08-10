@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# User onboarding through the certificates.k8s.io CSR API. Sourced, not run.
+# File: libs/users-lib.sh
+# Desc: User onboarding through the certificates.k8s.io CSR API.
 #
 # Each function is one step of the manual workflow, in the order a human would
 # perform it. Kept granular on purpose: the toil is the point, and the demo

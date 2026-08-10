@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Join a worker. Idempotent by artifact guard on kubelet.conf.
+# File: libs/node/20-worker-join.sh
+# Desc: Join a worker. Idempotent by artifact guard on kubelet.conf.
 # The join command is read from a 0600 file, not argv -- it embeds a bearer
 # token, and anything in argv is visible to every user via ps.
 set -euo pipefail

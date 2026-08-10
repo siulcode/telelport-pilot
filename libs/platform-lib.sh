@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Cluster platform: cert-manager, the issuer chain, Traefik, and the RBAC
-# scaffolding. Sourced by bootstrap.sh and run as part of --cluster.
+# File: libs/platform-lib.sh
+# Desc: Platform installed by --cluster: cert-manager, the issuer chain,
+#       Traefik, the demo namespace and Roles, and the network policy.
 #
 # All admin-owned. The restricted user deploys only the application itself,
 # which is why apps/nginx is deliberately NOT applied here.

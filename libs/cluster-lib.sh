@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# The --infra / --cluster / --reset / --status / --destroy implementations.
-# Sourced by bootstrap.sh, not run directly.
+# File: libs/cluster-lib.sh
+# Desc: Implementations behind each bootstrap.sh flag, plus its usage text.
 
 TEMPLATE="${REPO_ROOT}/infra/infra.yaml"
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# File: bootstrap.sh
+# Desc: Dispatcher. Each flag maps to one command in libs/cluster-lib.sh.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/libs/boot-lib.sh"
 
