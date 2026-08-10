@@ -197,7 +197,14 @@ deploy in demo-gitops       : yes
 deploy in demo              : no
 ```
 
-Add `<INGRESS_EIP>  gitops.demo` to `/etc/hosts`, then:
+Point `gitops.demo` at the **same ingress IP as `nginx.demo`** — the one on
+worker01. It is easy to grab the control-plane IP by mistake, and since Traefik
+only binds `:443` on worker01 you get a bare connection refusal rather than a
+useful error:
+
+```bash
+sudo sh -c 'printf "%s\n" "<INGRESS_EIP>  gitops.demo" >> /etc/hosts'
+```
 
 ```bash
 curl --cacert .build/ca.crt https://gitops.demo
@@ -227,3 +234,49 @@ Every flag is safe to re-run; `--all` twice changes nothing.
 
 If SSH starts timing out, your public IP probably changed (VPN on/off) — re-run
 `--infra` to refresh the security group.
+
+---
+
+## Optional — see it in a browser
+
+Everything above is reachable over the real ingress, but if you would rather
+click than curl, forward the services to localhost. Run each in its own
+terminal, or append `&` to background them:
+
+```bash
+kubectl -n demo        port-forward svc/nginx         8081:80
+kubectl -n demo-gitops port-forward svc/gitops-nginx  8082:80
+kubectl -n kube-system port-forward svc/hubble-ui     8083:80
+kubectl -n argocd      port-forward svc/argocd-server 8084:443
+```
+
+| | |
+|---|---|
+| <http://localhost:8081> | the RBAC-deployed site |
+| <http://localhost:8082> | the GitOps-delivered site |
+| <http://localhost:8083> | Hubble — live flows and policy verdicts |
+| <https://localhost:8084> | Argo CD |
+
+Argo CD is `8084:443`, not `:80` — its server redirects HTTP to HTTPS, so
+forwarding port 80 just yields a 307. Expect a certificate warning on that one;
+it serves its own self-signed cert, unrelated to the demo CA. Log in as `admin`:
+
+```bash
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d; echo
+```
+
+Note that port-forwarding talks to the Service directly, so it bypasses Traefik
+and TLS entirely — useful for the two UIs, but the certificate chain only shows
+up over the real ingress.
+
+If you want `https://nginx.demo` to show a padlock instead of a warning, trust
+the demo CA in your login keychain — and remove it afterwards, because its
+private key lives in a throwaway cluster:
+
+```bash
+security add-trusted-cert -r trustRoot -k ~/Library/Keychains/login.keychain-db .build/ca.crt
+```
+
+```bash
+security delete-certificate -c teleport-k8s-demo-ca ~/Library/Keychains/login.keychain-db
+```
