@@ -134,6 +134,31 @@ run_node_script() {
   ssh_node "${host}" "sudo bash ${NODE_STAGE}/${script}"
 }
 
+# --- Parallel execution ------------------------------------------------------
+# Run FN against each host concurrently, one log file per host. Nothing is
+# printed while they run; on failure the tail of that host's log is surfaced,
+# which is the only output you actually want.
+#   run_parallel <fn> <past-tense-verb> <host>...
+run_parallel() {
+  local fn="$1" verb="$2"; shift 2
+  local hosts=("$@") pids=() i failed=0
+  mkdir -p "${LOG_DIR}"
+  for i in "${!hosts[@]}"; do
+    "${fn}" "${hosts[$i]}" >>"${LOG_DIR}/${hosts[$i]}.log" 2>&1 &
+    pids+=("$!")
+  done
+  for i in "${!pids[@]}"; do
+    if wait "${pids[$i]}"; then
+      ok "${verb}: ${hosts[$i]}"
+    else
+      warn "FAILED to ${verb}: ${hosts[$i]} -- last 20 lines:"
+      tail -20 "${LOG_DIR}/${hosts[$i]}.log" >&2
+      failed=1
+    fi
+  done
+  return "${failed}"
+}
+
 # --- Private key retrieval ---------------------------------------------------
 # CloudFormation put the private half in SSM as a SecureString. Fetch once,
 # lock it to 0600, and never commit it.

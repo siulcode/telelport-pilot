@@ -83,82 +83,66 @@ cmd_infra() {
 # Phase 2 - Kubernetes. Idempotent by artifact guard, not reconciliation:
 # only the files kubeadm writes can say whether init succeeded.
 # =============================================================================
-cmd_cluster() {
-  step "Phase 2: Kubernetes"
+# Shared by --cluster and --reset. Populates CP, W1, W2, HOSTS.
+cluster_preflight() {
   require_cmd aws ssh scp kubectl
   require_aws_auth
   stack_exists || die "no infrastructure found. Run: ./bootstrap.sh --infra"
   fetch_private_key
+  CP="$(stack_output ControlPlanePublicIp)"
+  W1="$(stack_output Worker1PublicIp)"
+  W2="$(stack_output Worker2PublicIp)"
+  HOSTS=("${CP}" "${W1}" "${W2}")
+}
 
-  local cp w1 w2
-  cp="$(stack_output ControlPlanePublicIp)"
-  w1="$(stack_output Worker1PublicIp)"
-  w2="$(stack_output Worker2PublicIp)"
+# The two units run_parallel drives.
+_prep_host() { push_node_bundle "$1" && run_node_script "$1" 00-common.sh; }
+_join_host() { scp_node "${JOIN_FILE}" "$1" "${NODE_STAGE}/join-command" \
+                 && run_node_script "$1" 20-worker-join.sh; }
 
-  render_node_env "${cp}" >/dev/null
-  mkdir -p "${LOG_DIR}"
-
-  for h in "${cp}" "${w1}" "${w2}"; do wait_for_ssh "${h}"; done
-
-  # Three independent apt runs of several minutes each; serialising them triples
-  # wall clock for no benefit. Logs surface only on failure.
+# Three independent apt runs of several minutes each; serialising them triples
+# the wall clock for no benefit.
+cluster_prepare_hosts() {
+  render_node_env "${CP}" >/dev/null
+  local h; for h in "${HOSTS[@]}"; do wait_for_ssh "${h}"; done
   step "Host preparation (parallel, logging to ${LOG_DIR})"
-  local pids=() hosts=("${cp}" "${w1}" "${w2}") failed=0
-  for h in "${hosts[@]}"; do
-    ( push_node_bundle "${h}" && run_node_script "${h}" 00-common.sh ) \
-      >"${LOG_DIR}/${h}.log" 2>&1 &
-    pids+=("$!")
-    log "started: ${h}"
-  done
-  local i
-  for i in "${!pids[@]}"; do
-    if wait "${pids[$i]}"; then
-      ok "prepared: ${hosts[$i]}"
-    else
-      warn "FAILED: ${hosts[$i]} -- last 20 lines:"
-      tail -20 "${LOG_DIR}/${hosts[$i]}.log" >&2
-      failed=1
-    fi
-  done
-  (( failed == 0 )) || die "host preparation failed; full logs in ${LOG_DIR}"
+  run_parallel _prep_host prepare "${HOSTS[@]}" \
+    || die "host preparation failed; full logs in ${LOG_DIR}"
+}
 
-  # --- Control plane ----------------------------------------------------------
+cluster_init_control_plane() {
   step "Control plane"
-  run_node_script "${cp}" 10-control-plane.sh
+  run_node_script "${CP}" 10-control-plane.sh
+}
 
-  # The join command embeds a bootstrap token: written 0600, shredded after use,
-  # never passed on a command line where ps would expose it.
+# The join command embeds a bootstrap token: written 0600, shredded after use,
+# never passed on a command line where ps would expose it.
+cluster_join_workers() {
   step "Joining workers"
-  local join_file="${BUILD_DIR}/join-command"
-  ( umask 077; ssh_node "${cp}" "sudo kubeadm token create --print-join-command" \
-      > "${join_file}" )
-  [[ -s "${join_file}" ]] || die "could not generate a join command"
+  JOIN_FILE="${BUILD_DIR}/join-command"
+  ( umask 077; ssh_node "${CP}" "sudo kubeadm token create --print-join-command" \
+      > "${JOIN_FILE}" )
+  [[ -s "${JOIN_FILE}" ]] || die "could not generate a join command"
 
-  pids=(); failed=0
-  local workers=("${w1}" "${w2}")
-  for h in "${workers[@]}"; do
-    ( scp_node "${join_file}" "${h}" "${NODE_STAGE}/join-command" \
-        && run_node_script "${h}" 20-worker-join.sh ) \
-      >>"${LOG_DIR}/${h}.log" 2>&1 &
-    pids+=("$!")
-  done
-  for i in "${!pids[@]}"; do
-    if wait "${pids[$i]}"; then
-      ok "joined: ${workers[$i]}"
-    else
-      warn "FAILED to join: ${workers[$i]} -- last 20 lines:"
-      tail -20 "${LOG_DIR}/${workers[$i]}.log" >&2
-      failed=1
-    fi
-  done
-  rm -f "${join_file}"
-  (( failed == 0 )) || die "worker join failed; full logs in ${LOG_DIR}"
+  local rc=0
+  run_parallel _join_host join "${W1}" "${W2}" || rc=$?
+  rm -f "${JOIN_FILE}"
+  (( rc == 0 )) || die "worker join failed; full logs in ${LOG_DIR}"
+}
 
-  # --- CNI --------------------------------------------------------------------
+cluster_install_cni() {
   step "CNI (${CNI})"
-  run_node_script "${cp}" 30-cni.sh
+  run_node_script "${CP}" 30-cni.sh
+}
 
-  fetch_kubeconfig "${cp}"
+cmd_cluster() {
+  step "Phase 2: Kubernetes"
+  cluster_preflight
+  cluster_prepare_hosts
+  cluster_init_control_plane
+  cluster_join_workers
+  cluster_install_cni
+  fetch_kubeconfig "${CP}"
   platform_install
   cmd_status
 }
@@ -190,22 +174,14 @@ fetch_kubeconfig() {
 # =============================================================================
 cmd_reset() {
   step "Reset cluster"
-  require_cmd aws ssh scp kubectl
-  require_aws_auth
-  stack_exists || die "no infrastructure found"
-  fetch_private_key
-
-  local cp w1 w2
-  cp="$(stack_output ControlPlanePublicIp)"
-  w1="$(stack_output Worker1PublicIp)"
-  w2="$(stack_output Worker2PublicIp)"
+  cluster_preflight
 
   printf '\n  This runs kubeadm reset on all three nodes. The EC2 instances stay up.\n'
   read -r -p "  Type 'reset' to confirm: " reply
   [[ "${reply}" == "reset" ]] || die "aborted"
 
-  render_node_env "${cp}" >/dev/null
-  for h in "${w1}" "${w2}" "${cp}"; do
+  render_node_env "${CP}" >/dev/null
+  local h; for h in "${W1}" "${W2}" "${CP}"; do
     push_node_bundle "${h}"
     run_node_script "${h}" 90-reset.sh
   done
